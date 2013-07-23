@@ -18,15 +18,16 @@ object BedFileZipper {
     class Location(val chr : String, val loc : Int, val end : Int) extends Ordered[Location] {
       def isEOF : Boolean = (chr.equals("0") && loc == 0)
       def compare(that : Location) : Int = {
-        println("comparing " + this + " to " + that)
         if (isEOF) {
           1
         } else {
-          println (Ordering.Tuple2(Ordering.String, Ordering.Int).compare((chr, loc), (that.chr, that.loc)))
           Ordering.Tuple2(Ordering.String, Ordering.Int).compare((chr, loc), (that.chr, that.loc))
         }
       }
-      override def toString(): String = chr + "\t" + loc + "\t" + end;
+      def overlaps(that : Location) : Boolean = {
+        that.chr == this.chr && that.loc <= this.end && that.end >= this.loc
+      }
+      override def toString(): String = chr + "\t" + loc + "\t" + end
     }
 
     def parseLine(line : String) : (Location, Array[String]) = {
@@ -36,27 +37,39 @@ object BedFileZipper {
       (loc, values)
     }
 
-    if (args.length > 1) {
-
-      val f1 = args(0)
-      val f2 = args(1)
-
-      val f1Lines = Source.fromInputStream(new GZIPInputStream(new FileInputStream(f1))).getLines
-      val f2Lines = Source.fromInputStream(new GZIPInputStream(new FileInputStream(f2))).getLines ++ Stream.continually("0\t0\t0\t0").iterator
-
-      for (f1Line <- f1Lines) {
-        val (f1l : Location, f1v) = parseLine(f1Line)
-        print("got loc:\n" + f1Line + "\n")
-        val (f2l : Location, f2v) = parseLine(f2Lines.dropWhile(parseLine(_)._1 < f1l).next)
-        println (f2l, f2v)
-        if (! f2l.isEOF && (f2l compare f1l) == 0) {
-          println(f1l + "\t" + (f1v ++ f2v).mkString("\t"))
+    class FeatureFile(val fileLines:Iterator[String]) {
+      var (curLoc, curVals) = parseLine(fileLines.next())
+      def getFeatures(loc : Location) : Array[String] = {
+        if (curLoc < loc && ! curLoc.overlaps(loc) && fileLines.hasNext) {
+          val (lineLoc, lineVals) = parseLine(fileLines.dropWhile(s => { parseLine(s)._1.end < loc.loc }).next())
+          curLoc = lineLoc
+          curVals = lineVals
+        }
+        if (curLoc.overlaps(loc)) {
+          curVals
         } else {
-          println(f1l + "\t" + f1v.mkString("\t") + "\t0")
+          Array("0")
         }
       }
+    }
+
+    if (args.length > 1) {
+
+      val windowsFile = args(0)
+
+      val featureFiles = args.slice(1,args.length)
+
+      val windowLines = Source.fromInputStream(new GZIPInputStream(new FileInputStream(windowsFile))).getLines
+
+      val featureList = featureFiles.map(f => new FeatureFile(Source.fromInputStream(new GZIPInputStream(new FileInputStream(f))).getLines))
+
+      for (windowLine <- windowLines) {
+        val windowLoc = parseLine(windowLine)._1
+        val features  = featureList.map(f => f.getFeatures(windowLoc)).reduce(_ ++ _)
+        println(windowLoc + "\t" + features.mkString("\t"))
+      }
     } else {
-      println("usage: BedFileZipper original additionalInfoFile")
+      println("usage: BedFileZipper windows feature_file1 feature_file2 ...")
     }
 
   }
