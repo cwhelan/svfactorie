@@ -8,6 +8,7 @@ insertions_hap1=chr2_insertions_hap1_gte40.bed.gz
 insertions_hap2=chr2_insertions_hap2_gte40.bed.gz
 
 numeric_features=crf_bwa_training_data.bed.gz
+annotations=chr2_simple_repeats.bed.gz chr2_repeatmasker.bed.gz
 labels=$(deletions_hap1) $(deletions_hap2) deletion_flanks.bed.gz insertion_locations_hap1.bed.gz insertion_locations_hap2.bed.gz insertion_flanks.bed.gz
 
 windowsplitter=~/Documents/SVfactorie/src/main/python/windowsplitter/windowsplitter.py
@@ -41,11 +42,12 @@ event_windows.bed: deletion_windows.bed insertion_windows.bed
 event_windows_sorted.bed: event_windows.bed
 	cat $< | sort -k1,1 -k2,2n > $@
 
-training_data.bed.gz: ~/Documents/SVfactorie/target/scala-2.10/classes/edu/ohsu/sonmezsysbio/svfactorie/BedFileZipper.class bins.bed.gz $(numeric_features) $(labels)
+training_data.bed.gz: ~/Documents/SVfactorie/target/scala-2.10/classes/edu/ohsu/sonmezsysbio/svfactorie/BedFileZipper.class bins.bed.gz $(numeric_features) $(annotations) $(labels)
 	scala -classpath ~/Documents/SVfactorie/target/scala-2.10/classes edu.ohsu.sonmezsysbio.svfactorie.BedFileZipper bins.bed.gz $(numeric_features) \
-	    $(labels) | gzip -c > training_data.bed.gz
+	    $(annotations) $(labels) | gzip -c > training_data.bed.gz
 
 window_files: clean_windows $(windowsplitter) training_data.bed.gz event_windows_sorted.bed
+	rm windows/*
 	python $(windowsplitter) event_windows_sorted.bed training_data.bed.gz windows
 	touch window_files
 

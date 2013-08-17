@@ -188,7 +188,8 @@ object SVFactorie {
       realToCategoricalFeatures(features(4), "cov", 3, Array(10.0, 20, 40, 100)).map(label.bin +=)
       realToCategoricalFeatures(features(5), "ccov", 3, Array(10.0, 20, 40, 100)).map(label.bin +=)
 
-
+      if (fields(9) == "1") label.bin += "simple_repeat"
+      if (fields(10) == "1") label.bin += "repeat"
 
       window += label
     }
