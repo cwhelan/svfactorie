@@ -1,8 +1,6 @@
 package edu.ohsu.sonmezsysbio.svfactorie
 
 import cc.factorie._
-import cc.factorie.app.nlp.Token
-import cc.factorie.app.chain.ChainModel
 import java.io.File
 import cc.factorie.optimize.Trainer
 import scala.util.Random
@@ -93,7 +91,7 @@ object SVFactorie {
     val windowDir = args(0)
     val files = new File(windowDir).listFiles.map(windowDir + _.getName)
 
-    val numTrainingFiles: Int = 700
+    val numTrainingFiles: Int = 350
     val trainingIndices = RandSet.rand(numTrainingFiles, 0, files.size - 1)
     val trainingFiles = (0 to (files.length - 1)).filter(trainingIndices.contains(_)).map(files(_))
     val testFiles = (0 to (files.length - 1)).filter(! trainingIndices.contains(_)).map(files(_))
@@ -117,10 +115,10 @@ object SVFactorie {
     })
 
 
-    val summary = InferByBPChainSum.infer(trainingWindows(0), model)
+    // val summary = InferByBPChainSum.infer(trainingWindows(0), model)
     // assertStringEquals(summary.logZ, "6.931471805599453")
     //assertStringEquals(summary.marginal(document.tokens.head.attr[Label]).proportions, "Proportions(0.5,0.5)")
-
+    (trainingWindows ++ testWindows).flatten.foreach(_.setRandomly)
     val examples = trainingWindows.map(new optimize.LikelihoodExample(_, model, InferByBPChainSum))
 
     val optimizer1 = new optimize.LBFGS with optimize.L2Regularization
@@ -137,15 +135,42 @@ object SVFactorie {
 
     evaluationString(testWindows)
 
+    val windowsWithTruePredictions = testWindows.filter(w => w.asSeq.count(b => b.categoryValue.toInt != 0 && b.categoryValue == b.target.categoryValue) > 0)
+    println("Number of windows with a non-zero accurate prediction: " +
+      windowsWithTruePredictions.size + "/" + testWindows.size)
+    print(windowsWithTruePredictions.map(w => w(0).bin.loc).mkString("\n"))
+
+    for (w <- testWindows) {
+      val pw = new java.io.PrintWriter(new File("output/" + w(0).bin.loc + ".bed"))
+      try {
+        for (label <- w) {
+          pw.write(label.bin.loc + "\t" + label.target.categoryValue + "\t" + label.categoryValue + "\n")
+        }
+      } finally {
+        pw.close()
+      }
+    }
+
   }
 
-  def realToCategoricalFeatures(feature:Double, name:String, nullBin: Double, bins: Array[Double]) : Seq[String] = {
+  def realToCategoricalCumulativeBinnedFeatures(feature:Double, name:String, nullBin: Double, bins: Array[Double]) : Seq[String] = {
     if (feature <= nullBin) {
       List(name + "-N")
     } else {
       bins.filter(_ < feature).map(name + ">" + _)
     }
   }
+
+  def realToCategoricalBinnedFeatures(feature:Double, name:String, bins: Array[Double]) : Seq[String] = {
+     if (feature <= bins(0)) {
+       List(name + "0")
+     } else if (feature > bins(bins.size - 1)) {
+       List(name + bins.size)
+     } else {
+       (0 to bins.size - 2).filter(i => feature > bins(i) && feature <= bins(i + 1)).map(_ + 1).map(name + _)
+     }
+  }
+
 
   def load(filename:String) : Window = {
     import scala.io.Source
@@ -173,7 +198,7 @@ object SVFactorie {
       // last tested accuracy - 80%
 
       // use del/ins/flank (no zygosity) 72% -- up to 78% with interaction
-      //val labelStr = delPres + delFlank + insPres + insFlank
+      // val labelStr = delPres + delFlank + insPres + insFlank
 
       // use just del/ins (no zygosity) accuracy 88% - 85%
       val labelStr = delPres + insPres
@@ -182,14 +207,16 @@ object SVFactorie {
 
       val features = fields.slice(3, fields.length - numLabelFields).map(_.toDouble)
 
-      realToCategoricalFeatures(features(0), "w0", -0.01, Array(.25, .5, 1)).map(label.bin +=)
-      realToCategoricalFeatures(features(1), "mu1", 240, Array(255.0, 300.0, 345.0)).map(label.bin +=)
-      realToCategoricalFeatures(features(2), "lr", 0, Array(.25, .5, 1, 2, 5, 100, 1000)).map(label.bin +=)
-      realToCategoricalFeatures(features(4), "cov", 3, Array(10.0, 20, 40, 100)).map(label.bin +=)
-      realToCategoricalFeatures(features(5), "ccov", 3, Array(10.0, 20, 40, 100)).map(label.bin +=)
+      realToCategoricalCumulativeBinnedFeatures(features(0), "w0", -0.01, Array(.25, .35, .5, 1)).map(label.bin +=)
+      realToCategoricalBinnedFeatures(features(1), "mu1", Array(255.0, 285.0, 300.0, 315.0, 345.0, 360.0)).map(label.bin +=)
+      realToCategoricalCumulativeBinnedFeatures(features(2), "lr", 0, Array(.5, 1, 2, 5, 10, 100, 1000)).map(label.bin +=)
+      //realToCategoricalFeatures(features(4), "cov", 3, Array(10.0, 20, 40, 100)).map(label.bin +=)
+      realToCategoricalCumulativeBinnedFeatures(features(5), "ccov", 3, Array(10.0, 20, 40, 100)).map(label.bin +=)
+      realToCategoricalCumulativeBinnedFeatures(features(6), "singletons", 0, Array(1.0,3,5,10)).map(label.bin +=)
+      realToCategoricalCumulativeBinnedFeatures(features(7), "changePoint", 0, Array(10.0,20,30,50,100)).map(label.bin +=)
 
-      if (fields(9) == "1") label.bin += "simple_repeat"
-      if (fields(10) == "1") label.bin += "repeat"
+      if (fields(11) == "1") label.bin += "simple_repeat"
+      if (fields(12) == "1") label.bin += "repeat"
 
       window += label
     }
