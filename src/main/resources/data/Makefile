@@ -13,6 +13,10 @@ labels=$(deletions_hap1) $(deletions_hap2) deletion_flanks.bed.gz insertion_loca
 
 windowsplitter=~/Documents/SVfactorie/src/main/python/windowsplitter/windowsplitter.py
 
+bedfilezipper_file=~/Documents/SVfactorie/target/scala-2.10/classes/edu/ohsu/sonmezsysbio/svfactorie/BedFileZipper.class
+bedfilezipper_cp=~/Documents/SVfactorie/target/scala-2.10/classes/
+bedfilezipper_class=edu.ohsu.sonmezsysbio.svfactorie.BedFileZipper
+
 all: window_files
 
 bins.bed.gz: $(genome)
@@ -42,8 +46,8 @@ event_windows.bed: deletion_windows.bed
 event_windows_sorted.bed: event_windows.bed
 	cat $< | sort -k1,1 -k2,2n > $@
 
-training_data.bed.gz: ~/Documents/SVfactorie/target/scala-2.10/classes/edu/ohsu/sonmezsysbio/svfactorie/BedFileZipper.class bins.bed.gz $(numeric_features) $(annotations) $(labels)
-	scala -classpath ~/Documents/SVfactorie/target/scala-2.10/classes edu.ohsu.sonmezsysbio.svfactorie.BedFileZipper bins.bed.gz $(numeric_features) \
+training_data.bed.gz: $(bedfilezippper_file) bins.bed.gz $(numeric_features) $(annotations) $(labels)
+	scala -classpath $(bedfilezipper_cp) $(bedfilezipper_class) bins.bed.gz $(numeric_features) \
 	    $(annotations) $(labels) | gzip -c > training_data.bed.gz
 
 window_files: $(windowsplitter) training_data.bed.gz event_windows_sorted.bed
