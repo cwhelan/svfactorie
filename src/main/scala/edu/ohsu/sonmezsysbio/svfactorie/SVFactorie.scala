@@ -4,6 +4,7 @@ import cc.factorie._
 import java.io.File
 import cc.factorie.optimize.Trainer
 import scala.util.Random
+import scala.io.Source
 
 /**
  * Created by IntelliJ IDEA.
@@ -23,6 +24,44 @@ object SVFactorie {
     def domain = LabelDomain
   }
   class Window extends Chain[Window,Label]
+
+  trait FeatureDescriptor {
+    def toFeatures(featureList : Array[String]) : Seq[String]
+  }
+  class BooleanFeatureDescriptor(column : Int, name : String) extends FeatureDescriptor {
+    def toFeatures(featureList : Array[String]) : Seq[String] = {
+      if (featureList(column) == "1") { Seq(name) } else Seq()
+    }
+  }
+  class CumulativeBinnedRealFeatureDescriptor(column : Int, name : String, nullBin : Double, bins : Array[Double])
+    extends FeatureDescriptor {
+    def toFeatures(featureList : Array[String]) : Seq[String] = {
+      realToCategoricalCumulativeBinnedFeatures(featureList(column).toDouble, name, nullBin, bins)
+    }
+  }
+
+  class BinnedRealFeatureDescriptor(column : Int, name : String, bins : Array[Double])
+    extends FeatureDescriptor {
+    def toFeatures(featureList : Array[String]) : Seq[String] = {
+      realToCategoricalBinnedFeatures(featureList(column).toDouble, name, bins)
+    }
+  }
+
+  class FeatureDescriptors(val features : Array[_ <:FeatureDescriptor])
+
+  def loadFeatureDescriptors(featureFile : String) = {
+    val source = Source.fromFile(new File(featureFile))
+    val lines =  source.getLines().filter(! _.startsWith("#")).map(_.split("\t"))
+    val featureDescriptors = lines.filter(_(0) == "feature").map(
+      f => f(1) match {
+        case "boolean" => new BooleanFeatureDescriptor(f(2).toInt, f(3))
+        case "cumulativeBinnedReal" => new CumulativeBinnedRealFeatureDescriptor(f(2).toInt, f(3), f(4).toDouble, f(5).split(",").map(_.toDouble))
+        case "binnedReal" => new BinnedRealFeatureDescriptor(f(2).toInt, f(3), f(4).split(",").map(_.toDouble))
+      }
+    ).toArray
+    new FeatureDescriptors(featureDescriptors)
+  }
+
 
   // The model
   val excludeSkipEdges = true
@@ -89,15 +128,22 @@ object SVFactorie {
     implicit val random = new scala.util.Random(0)
 
     val windowDir = args(0)
+    val featureDescriptorFile = args(1)
+
+
+    val featureDescriptors = loadFeatureDescriptors(featureDescriptorFile)
+
     val files = new File(windowDir).listFiles.map(windowDir + _.getName)
 
-    val numTrainingFiles: Int = 350
+    val numTrainingFiles: Int = (files.length * .8).round.toInt
+    println("Total files: " + files.length)
+    println("Train/Test: " + numTrainingFiles + "/" + (files.length - numTrainingFiles))
     val trainingIndices = RandSet.rand(numTrainingFiles, 0, files.size - 1)
     val trainingFiles = (0 to (files.length - 1)).filter(trainingIndices.contains(_)).map(files(_))
     val testFiles = (0 to (files.length - 1)).filter(! trainingIndices.contains(_)).map(files(_))
 
-    val trainingWindows = trainingFiles.map(load)
-    val testWindows = testFiles.map(load)
+    val trainingWindows = trainingFiles.map(load(_, featureDescriptors))
+    val testWindows = testFiles.map(load(_, featureDescriptors))
 
     val allBins: Seq[Bin] = (trainingWindows ++ testWindows).flatten.map(_.bin)
 
@@ -172,7 +218,7 @@ object SVFactorie {
   }
 
 
-  def load(filename:String) : Window = {
+  def load(filename:String, featureDescriptors : FeatureDescriptors) : Window = {
     import scala.io.Source
 
     val window = new Window
@@ -198,25 +244,27 @@ object SVFactorie {
       // last tested accuracy - 80%
 
       // use del/ins/flank (no zygosity) 72% -- up to 78% with interaction
-      // val labelStr = delPres + delFlank + insPres + insFlank
+      val labelStr = delPres + delFlank + insPres + insFlank
 
       // use just del/ins (no zygosity) accuracy 88% - 85%
-      val labelStr = delPres + insPres
+      // val labelStr = delPres + insPres
 
       val label = new Label(labelStr, loc)
 
-      val features = fields.slice(3, fields.length - numLabelFields).map(_.toDouble)
+      val featureValues = fields.slice(3, fields.length - numLabelFields)
 
-      realToCategoricalCumulativeBinnedFeatures(features(0), "w0", -0.01, Array(.25, .35, .5, 1)).map(label.bin +=)
-      realToCategoricalBinnedFeatures(features(1), "mu1", Array(255.0, 285.0, 300.0, 315.0, 345.0, 360.0)).map(label.bin +=)
-      realToCategoricalCumulativeBinnedFeatures(features(2), "lr", 0, Array(.5, 1, 2, 5, 10, 100, 1000)).map(label.bin +=)
-      //realToCategoricalFeatures(features(4), "cov", 3, Array(10.0, 20, 40, 100)).map(label.bin +=)
-      realToCategoricalCumulativeBinnedFeatures(features(5), "ccov", 3, Array(10.0, 20, 40, 100)).map(label.bin +=)
-      realToCategoricalCumulativeBinnedFeatures(features(6), "singletons", 0, Array(1.0,3,5,10)).map(label.bin +=)
-      realToCategoricalCumulativeBinnedFeatures(features(7), "changePoint", 0, Array(10.0,20,30,50,100)).map(label.bin +=)
+//      realToCategoricalCumulativeBinnedFeatures(features(0), "w0", -0.01, Array(.25, .35, .5, 1)).map(label.bin +=)
+//      realToCategoricalBinnedFeatures(features(1), "mu1", Array(255.0, 285.0, 300.0, 315.0, 345.0, 360.0)).map(label.bin +=)
+//      realToCategoricalCumulativeBinnedFeatures(features(2), "lr", 0, Array(.5, 1, 2, 5, 10, 100, 1000)).map(label.bin +=)
+//      //realToCategoricalFeatures(features(4), "cov", 3, Array(10.0, 20, 40, 100)).map(label.bin +=)
+//      realToCategoricalCumulativeBinnedFeatures(features(5), "ccov", 3, Array(10.0, 20, 40, 100)).map(label.bin +=)
+//      realToCategoricalCumulativeBinnedFeatures(features(6), "singletons", 0, Array(1.0,3,5,10)).map(label.bin +=)
+//      realToCategoricalCumulativeBinnedFeatures(features(7), "changePoint", 0, Array(10.0,20,30,50,100)).map(label.bin +=)
+//
+//      if (fields(11) == "1") label.bin += "simple_repeat"
+//      if (fields(12) == "1") label.bin += "repeat"
 
-      if (fields(11) == "1") label.bin += "simple_repeat"
-      if (fields(12) == "1") label.bin += "repeat"
+      featureDescriptors.features.map(_.toFeatures(featureValues)).flatten.map(label.bin +=)
 
       window += label
     }
