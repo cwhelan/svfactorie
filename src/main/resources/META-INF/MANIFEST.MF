@@ -1,0 +1,1 @@
+Main-Class: edu.ohsu.sonmezsysbio.svfactorie.SVFactorie
