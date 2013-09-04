@@ -61,7 +61,7 @@ def getObs(seg, idx, c):
             obs = np.append(obs,seg[p+c])
     return obs
 
-def detect_change_points(startSeg, endSeg, segFile, window, ocutoff, output):
+def detect_change_points(startSeg, endSeg, segFile, window, ocutoff, output, printBed=False, chrom=None, resolution=25):
     global fp, seg, minIns, maxIns, reachedEnd, l, toks, posn, insSizes, sizes, insSize, lastPosn, t, obsPosn, buf, c, tref, score, k, idx, i, obsA, obsB, lhA2, lhB2, obsAB, lhAB2
     fp = gzip.open(segFile)
     seg = {}
@@ -76,7 +76,7 @@ def detect_change_points(startSeg, endSeg, segFile, window, ocutoff, output):
         if posn > endSeg:
             reachedEnd = 1
             break
-        insSizes = map(int, toks)
+        insSizes = map(int, map(float, toks))
         sizes = []
         for insSize in insSizes:
             if insSize < minIns or minIns < 0:
@@ -132,24 +132,31 @@ def detect_change_points(startSeg, endSeg, segFile, window, ocutoff, output):
         tref.append(idx)
         score.append((lhA2 + lhB2) - lhAB2)
         #print "%d %.3f" %(idx, (lhA + lhB) - lhAB)
-        output.write("%d %.3f\n" % (idx, (lhA2 + lhB2) - lhAB2))
+        if not printBed:
+            output.write("%d %.3f\n" % (idx, (lhA2 + lhB2) - lhAB2))
+        else:
+            end = idx + resolution - 1
+            output.write("%s\t%d\t%d\t%.3f\n" % (chrom, idx, end, (lhA2 + lhB2) - lhAB2))
 
         # plt.plot(tref, score)
         # plt.show()
 
+def main():
+    parser = argparse.ArgumentParser(description='Detect change points in a given segment from a given file')
+    parser.add_argument('start', help='start of the segment', type=int)
+    parser.add_argument('end', help='end of the segment', type=int)
+    parser.add_argument('segfile', help='file containing the segment', type=str)
+    parser.add_argument('window', help='window length', type=int)
+    parser.add_argument('obscutoff', help='ignore segments fewer than threshold number of observations', type=int)
 
-parser = argparse.ArgumentParser(description='Detect change points in a given segment from a given file')
-parser.add_argument('start', help='start of the segment', type=int)
-parser.add_argument('end', help='end of the segment', type=int)
-parser.add_argument('segfile', help='file containing the segment', type=str)
-parser.add_argument('window', help='window length', type=int)
-parser.add_argument('obscutoff', help='ignore segments fewer than threshold number of observations', type=int)
+    args = parser.parse_args()
+    startSeg = args.start
+    endSeg = args.end
+    segFile = args.segfile
+    window = args.window
+    ocutoff = args.obscutoff
 
-args = parser.parse_args()
-startSeg = args.start
-endSeg = args.end
-segFile = args.segfile
-window = args.window
-ocutoff = args.obscutoff
+    detect_change_points(startSeg, endSeg, segFile, window, ocutoff, sys.stdout)
 
-detect_change_points(startSeg, endSeg, segFile, window, ocutoff, sys.stdout)
+if __name__ == "__main__":
+    main()
