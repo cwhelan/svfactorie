@@ -268,6 +268,7 @@ object SVFactorie {
 
       window += label
     }
+    source.close()
     window
   }
 
