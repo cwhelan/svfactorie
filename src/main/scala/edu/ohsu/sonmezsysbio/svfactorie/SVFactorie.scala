@@ -120,8 +120,23 @@ object SVFactorie {
     val random = Random
 
     def rand (count: Int, lower: Int, upper: Int, sofar: Set[Int] = Set.empty): Set[Int] =
-      if (count == sofar.size) sofar else
-        rand (count, lower, upper, sofar + (random.nextInt (upper-lower) + lower))
+      if (upper == 0) return sofar + 0 else
+        if (count == sofar.size) sofar else
+          rand (count, lower, upper, sofar + (random.nextInt (upper-lower) + lower))
+  }
+
+  def neighborFeatures(bin : Bin, index : Int, current : Int = 1) : Set[String] = {
+    if (current == index) {
+      return Set.empty
+    } else {
+      val left = index < 0
+      if (left && ! bin.label.hasPrev) return Set.empty
+      if (! left && ! bin.label.hasNext) return Set.empty
+      val neighbor = if (left) bin.label.prev.bin else bin.label.next.bin
+      return neighbor.activeCategories.filter(!_.contains('@')).map(_+"@<>").toSet.union(
+        neighborFeatures(neighbor, index, current + (if(left) -1 else 1)))
+    }
+
   }
 
   def main(args:Array[String]): Unit = {
@@ -160,6 +175,10 @@ object SVFactorie {
       if (bin.label.hasNext) bin ++= bin.label.next.bin.activeCategories.filter(!_.contains('@')).map(_+"@+1")
     })
 
+    allBins.foreach(bin => {
+      bin ++= neighborFeatures(bin, -4)
+      bin ++= neighborFeatures(bin, 4)
+    })
 
     // val summary = InferByBPChainSum.infer(trainingWindows(0), model)
     // assertStringEquals(summary.logZ, "6.931471805599453")
@@ -170,6 +189,8 @@ object SVFactorie {
     val optimizer1 = new optimize.LBFGS with optimize.L2Regularization
     optimizer1.variance = 10000.0
     Trainer.batchTrain(model.parameters, examples, optimizer=optimizer1)
+
+
 
     val objective = HammingObjective
     println("*** Starting inference (#sentences=%d)".format(testWindows.map(_.size).sum))
@@ -268,6 +289,7 @@ object SVFactorie {
 
       window += label
     }
+    source.close()
     window
   }
 
