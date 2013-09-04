@@ -61,6 +61,83 @@ def getObs(seg, idx, c):
             obs = np.append(obs,seg[p+c])
     return obs
 
+def detect_change_points(startSeg, endSeg, segFile, window, ocutoff, output):
+    global fp, seg, minIns, maxIns, reachedEnd, l, toks, posn, insSizes, sizes, insSize, lastPosn, t, obsPosn, buf, c, tref, score, k, idx, i, obsA, obsB, lhA2, lhB2, obsAB, lhAB2
+    fp = gzip.open(segFile)
+    seg = {}
+    minIns = -1
+    maxIns = -1
+    reachedEnd = -1
+    for l in fp:
+        toks = l.strip().split()
+        posn = int(toks.pop(0))
+        if posn < startSeg:
+            continue
+        if posn > endSeg:
+            reachedEnd = 1
+            break
+        insSizes = map(int, toks)
+        sizes = []
+        for insSize in insSizes:
+            if insSize < minIns or minIns < 0:
+                minIns = insSize
+            if insSize > maxIns or maxIns < 0:
+                maxIns = insSize
+            sizes.append(insSize)
+        seg[posn] = sizes
+        lastPosn = posn
+    if not reachedEnd:
+        sys.stderr.write("Warning: EOF reached before end of segment!")
+    sys.stderr.write("# Segment: beg = %d, end = %d, min = %d, max = %d\n"
+                     % (startSeg, lastPosn, minIns, maxIns))
+    t = seg.keys()
+    t.sort(key=int)
+    obsPosn = np.zeros((lastPosn - startSeg + 1), dtype=np.uint8)
+    for posn in t:
+        obsPosn[posn - startSeg] = 1
+    buf = []
+    c = startSeg
+    tref = []
+    score = []
+    for k, idx in enumerate(t):
+        i = int(idx)
+        if i - window < startSeg:
+            continue
+        if i + window > lastPosn:
+            continue
+        obsA = getObs(seg, np.where(obsPosn[i - window - c:i - c] == 1)[0], i - window)
+        obsB = getObs(seg, np.where(obsPosn[i - c:i + window - c] == 1)[0], i)
+        if len(obsA) < ocutoff or len(obsB) < ocutoff:
+            continue
+            #gmmA = learnGMM(1)
+        #gmmA.fit(obsA)
+        # The likelihood evaluation for lhA and lhB can be potentially
+        # simplified (faster) by a closed form solution using the
+        # covariance and the scatter matrix.
+        #lhA = np.sum(gmmA.score(obsA))
+        #print lhA
+        lhA2 = len(obsA) * -.5 * np.log(np.var(obsA)) - len(obsA) * .5 * np.log(2 * np.pi) - len(obsA) / 2
+        #print lhA2
+        #gmmB = learnGMM(1)
+        #gmmB = gmmB.fit(obsB)
+        #lhB = np.sum(gmmB.score(obsB))
+        #print lhB
+        lhB2 = len(obsB) * -.5 * np.log(np.var(obsB)) - len(obsB) * .5 * np.log(2 * np.pi) - len(obsB) / 2
+        #print lhB2
+        #gmmAB = learnGMM(2)
+        obsAB = np.append(obsA, obsB)
+        #gmmAB = gmmAB.fit(obsAB)
+        #lhAB = np.sum(gmmB.score(obsAB))
+        lhAB2 = len(obsAB) * -.5 * np.log(np.var(obsAB)) - len(obsAB) * .5 * np.log(2 * np.pi) - len(obsAB) / 2
+        tref.append(idx)
+        score.append((lhA2 + lhB2) - lhAB2)
+        #print "%d %.3f" %(idx, (lhA + lhB) - lhAB)
+        output.write("%d %.3f\n" % (idx, (lhA2 + lhB2) - lhAB2))
+
+        # plt.plot(tref, score)
+        # plt.show()
+
+
 parser = argparse.ArgumentParser(description='Detect change points in a given segment from a given file')
 parser.add_argument('start', help='start of the segment', type=int)
 parser.add_argument('end', help='end of the segment', type=int)
@@ -75,79 +152,4 @@ segFile = args.segfile
 window = args.window
 ocutoff = args.obscutoff
 
-fp = gzip.open(segFile)
-seg = {}
-minIns = -1
-maxIns = -1
-reachedEnd = -1
-for l in fp:
-    toks = l.strip().split()
-    posn = int(toks.pop(0))
-    if posn < startSeg:
-        continue
-    if posn > endSeg:
-        reachedEnd = 1
-        break
-    insSizes = map(int, toks)
-    sizes = []
-    for insSize in insSizes:
-        if insSize < minIns or minIns < 0:
-            minIns = insSize
-        if insSize > maxIns or maxIns < 0:
-            maxIns = insSize            
-        sizes.append(insSize)
-    seg[posn] = sizes
-    lastPosn = posn
-
-if not reachedEnd:
-    sys.stderr.write("Warning: EOF reached before end of segment!")
-sys.stderr.write("# Segment: beg = %d, end = %d, min = %d, max = %d\n"
-                 %(startSeg, lastPosn, minIns, maxIns))
-
-t = seg.keys() 
-t.sort(key=int)
-obsPosn = np.zeros((lastPosn-startSeg+1), dtype=np.uint8)
-for posn in t:
-    obsPosn[posn-startSeg] = 1
-
-buf = []
-c = startSeg
-tref = []
-score = []
-for k, idx in enumerate(t):
-    i = int(idx)
-    if i-window < startSeg:
-        continue
-    if i+window > lastPosn:
-        continue
-    obsA = getObs(seg, np.where(obsPosn[i-window-c:i-c]==1)[0], i-window)
-    obsB = getObs(seg, np.where(obsPosn[i-c:i+window-c]==1)[0], i)
-    if len(obsA) < ocutoff or len(obsB) < ocutoff:
-        continue
-    #gmmA = learnGMM(1)
-    #gmmA.fit(obsA)
-    # The likelihood evaluation for lhA and lhB can be potentially
-    # simplified (faster) by a closed form solution using the
-    # covariance and the scatter matrix.
-    #lhA = np.sum(gmmA.score(obsA))
-    #print lhA
-    lhA2 = len(obsA) * -.5 * np.log(np.var(obsA)) - len(obsA) * .5 * np.log (2 * np.pi) - len(obsA) / 2
-    #print lhA2
-    #gmmB = learnGMM(1)
-    #gmmB = gmmB.fit(obsB)
-    #lhB = np.sum(gmmB.score(obsB))
-    #print lhB
-    lhB2 = len(obsB) * -.5 * np.log(np.var(obsB)) - len(obsB) * .5 * np.log (2 * np.pi) - len(obsB) / 2
-    #print lhB2
-    #gmmAB = learnGMM(2)
-    obsAB = np.append(obsA, obsB)
-    #gmmAB = gmmAB.fit(obsAB)
-    #lhAB = np.sum(gmmB.score(obsAB))
-    lhAB2 = len(obsAB) * -.5 * np.log(np.var(obsAB)) - len(obsAB) * .5 * np.log (2 * np.pi) - len(obsAB) / 2
-    tref.append(idx)
-    score.append((lhA2 + lhB2) - lhAB2)
-    #print "%d %.3f" %(idx, (lhA + lhB) - lhAB)
-    print "%d %.3f" %(idx, (lhA2 + lhB2) - lhAB2)
-
-# plt.plot(tref, score)
-# plt.show()
+detect_change_points(startSeg, endSeg, segFile, window, ocutoff, sys.stdout)
