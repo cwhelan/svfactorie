@@ -61,9 +61,8 @@ def getObs(seg, idx, c):
             obs = np.append(obs,seg[p+c])
     return obs
 
-def detect_change_points(startSeg, endSeg, segFile, window, ocutoff, output):
-    global fp, seg, minIns, maxIns, reachedEnd, l, toks, posn, insSizes, sizes, insSize, lastPosn, t, obsPosn, buf, c, tref, score, k, idx, i, obsA, obsB, lhA2, lhB2, obsAB, lhAB2
-    fp = gzip.open(segFile)
+def detect_change_points(startSeg, endSeg, fp, window, ocutoff, output):
+    global seg, minIns, maxIns, reachedEnd, l, toks, posn, insSizes, sizes, insSize, lastPosn, t, obsPosn, buf, c, tref, score, k, idx, i, obsA, obsB, lhA2, lhB2, obsAB, lhAB2
     seg = {}
     minIns = -1
     maxIns = -1
@@ -152,4 +151,6 @@ segFile = args.segfile
 window = args.window
 ocutoff = args.obscutoff
 
-detect_change_points(startSeg, endSeg, segFile, window, ocutoff, sys.stdout)
+fp = gzip.open(segFile)
+
+detect_change_points(startSeg, endSeg, fp, window, ocutoff, sys.stdout)
