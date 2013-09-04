@@ -125,8 +125,8 @@ object SVFactorie {
           rand (count, lower, upper, sofar + (random.nextInt (upper-lower) + lower))
   }
 
-  def neighborFeatures(bin : Bin, index : Int, current : Int = 1) : Set[String] = {
-    if (current == index) {
+  def neighborFeatures(bin : Bin, index : Int, current : Int = 0) : Set[String] = {
+    if (Math.abs(current - index) <= 1) {
       return Set.empty
     } else {
       val left = index < 0
@@ -163,18 +163,20 @@ object SVFactorie {
     val allBins: Seq[Bin] = (trainingWindows ++ testWindows).flatten.map(_.bin)
 
     // Add interaction features
+    println("Adding interaction features...")
     allBins.foreach(bin => {
       val l = bin.activeCategories
       bin ++= l.map(_ => l).flatten.combinations(2).toList.filter(f => f(0) != f(1)).map(f => f(0) + "*" + f(1))
     })
 
     // Add features from next and previous tokens
-    // println("Adding offset features...")
+    println("Adding offset features...")
     allBins.foreach(bin => {
       if (bin.label.hasPrev) bin ++= bin.label.prev.bin.activeCategories.filter(!_.contains('@')).map(_+"@-1")
       if (bin.label.hasNext) bin ++= bin.label.next.bin.activeCategories.filter(!_.contains('@')).map(_+"@+1")
     })
 
+    println("Adding neighbor features...")
     allBins.foreach(bin => {
       bin ++= neighborFeatures(bin, -4)
       bin ++= neighborFeatures(bin, 4)
