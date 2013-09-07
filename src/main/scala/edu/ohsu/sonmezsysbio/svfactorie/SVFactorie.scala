@@ -5,6 +5,8 @@ import java.io.File
 import cc.factorie.optimize.Trainer
 import scala.util.Random
 import scala.io.Source
+import cc.factorie.util.BinarySerializer
+import org.junit.Assert._
 
 /**
  * Created by IntelliJ IDEA.
@@ -47,6 +49,31 @@ object SVFactorie {
     }
   }
 
+  class SVModel extends TemplateModel with Parameters {
+      // Bias term on each individual label
+      val biasTemplate = new DotTemplateWithStatistics1[Label] {
+        //def statisticsDomains = Tuple1(LabelDomain)
+        val weights = Weights(new la.DenseTensor1(LabelDomain.size))
+      }
+      // Transition factors between two successive labels
+      val transitionTemplate = new DotTemplateWithStatistics2[Label, Label] {
+        //def statisticsDomains = ((LabelDomain, LabelDomain))
+        val weights = Weights(new la.DenseTensor2(LabelDomain.size, LabelDomain.size))
+        def unroll1(label: Label) = if (label.hasNext) Factor(label, label.next) else Nil
+        def unroll2(label: Label) = if (label.hasPrev) Factor(label.prev, label) else Nil
+      }
+      // Factor between label and observed token
+      val localTemplate = new DotTemplateWithStatistics2[Label, Bin] {
+        //def statisticsDomains = ((LabelDomain, TokenDomain))
+        val weights = Weights(new la.DenseTensor2(LabelDomain.size, BinDomain.dimensionSize))
+        def unroll1(label: Label) = Factor(label, label.bin)
+        def unroll2(bin: Bin) = Factor(bin.label, bin)
+      }
+    this += biasTemplate
+    this += localTemplate
+    this += transitionTemplate
+  }
+
   class FeatureDescriptors(val features : Array[_ <:FeatureDescriptor])
 
   def loadFeatureDescriptors(featureFile : String) = {
@@ -63,41 +90,41 @@ object SVFactorie {
   }
 
 
-  // The model
-  val excludeSkipEdges = true
-  val model = new TemplateModel with Parameters {
-    addTemplates(
-      // Bias term on each individual label
-      new DotTemplateWithStatistics1[Label] {
-        //def statisticsDomains = Tuple1(LabelDomain)
-        val weights = Weights(new la.DenseTensor1(LabelDomain.size))
-      },
-      // Transition factors between two successive labels
-      new DotTemplateWithStatistics2[Label, Label] {
-        //def statisticsDomains = ((LabelDomain, LabelDomain))
-        val weights = Weights(new la.DenseTensor2(LabelDomain.size, LabelDomain.size))
-        def unroll1(label: Label) = if (label.hasNext) Factor(label, label.next) else Nil
-        def unroll2(label: Label) = if (label.hasPrev) Factor(label.prev, label) else Nil
-      },
-      // Factor between label and observed token
-      new DotTemplateWithStatistics2[Label, Bin] {
-        //def statisticsDomains = ((LabelDomain, TokenDomain))
-        val weights = Weights(new la.DenseTensor2(LabelDomain.size, BinDomain.dimensionSize))
-        def unroll1(label: Label) = Factor(label, label.bin)
-        def unroll2(bin: Bin) = Factor(bin.label, bin)
-      }
-      //        ,
-      //        // what does this template do?
-      //        new DotTemplate2[Label,Label] /*DotStatistics1[BooleanValue]*/ {
-      //          //def statisticsDomains = Tuple1(BooleanDomain)
-      //          val weights = Weights(new la.DenseTensor1(BooleanDomain.size))
-      //          def unroll1(label: Label) = if (excludeSkipEdges) Nil else for (other <- label.chainAfter; if (other.bin.loc == label.bin.loc)) yield Factor(label, other)
-      //          def unroll2(label: Label) = if (excludeSkipEdges) Nil else for (other <- label.chainBefore; if (other.bin.loc == label.bin.loc)) yield Factor(other, label)
-      //          override def statistics(v1:Label#Value, v2:Label#Value) = BooleanValue(v1.intValue == v2.intValue)
-      //        }
-    )
+  def serialize(model : SVModel, labelDomain : CategoricalDomain[String], featuresDomain : CategoricalTensorDomain[String], prefix: String) {
+    val modelFile = new File(prefix + "-model")
+    if (modelFile.getParentFile ne null)
+      modelFile.getParentFile.mkdirs()
+    println("serializing, model.transitionTemplate.weightsSet.length: " + model.transitionTemplate.weights.value.length)
+    println("serializing, model.localTemplate.weightsSet.length: " + model.localTemplate.weights.value.length)
+    BinarySerializer.serialize(model, modelFile)
+    val labelDomainFile = new File(prefix + "-labelDomain")
+    BinarySerializer.serialize(labelDomain.dimensionDomain, labelDomainFile)
+    val featuresDomainFile = new File(prefix + "-featuresDomain")
+    BinarySerializer.serialize(featuresDomain.dimensionDomain, featuresDomainFile)
   }
 
+  def deserialize(model : SVModel, labelDomain : CategoricalDomain[String], featuresDomain : CategoricalTensorDomain[String], prefix: String) {
+    val featuresDomainFile = new File(prefix + "-featuresDomain")
+    assert(featuresDomainFile.exists(), "Trying to load inexistent label domain file: '" + prefix + "-featuresDomain'")
+    BinarySerializer.deserialize(featuresDomain.dimensionDomain, featuresDomainFile)
+
+    val labelDomainFile = new File(prefix + "-labelDomain")
+    assert(labelDomainFile.exists(), "Trying to load inexistent label domain file: '" + prefix + "-labelDomain'")
+    BinarySerializer.deserialize(labelDomain.dimensionDomain, labelDomainFile)
+
+    val modelFile = new File(prefix + "-model")
+    assert(modelFile.exists(), "Trying to load inexisting model file: '" + prefix + "-model'")
+    assertEquals(model.transitionTemplate.weights.value.length, labelDomain.length * labelDomain.length)
+    BinarySerializer.deserialize(model, modelFile)
+    println("deserializing, model.transitionTemplate.weightsSet.length: " + model.transitionTemplate.weights.value.length)
+    println("deserializing, model.localTemplate.weightsSet.length: " + model.localTemplate.weights.value.length)
+
+    println("Is the feature domain frozen: " +  featuresDomain.dimensionDomain.frozen)
+    featuresDomain.dimensionDomain.freeze()
+    println("Is the feature domain frozen: " +  featuresDomain.dimensionDomain.frozen)
+  }
+
+  // The model
   val objective = new HammingTemplate[Label]
 
 
@@ -140,11 +167,15 @@ object SVFactorie {
   }
 
   def main(args:Array[String]): Unit = {
-    implicit val random = new scala.util.Random(0)
+
+
+
+    implicit val random = new scala.util.Random()
 
     val windowDir = args(0)
     val featureDescriptorFile = args(1)
 
+    val model = new SVModel
 
     val featureDescriptors = loadFeatureDescriptors(featureDescriptorFile)
 
@@ -182,10 +213,16 @@ object SVFactorie {
       bin ++= neighborFeatures(bin, 4)
     })
 
+    (trainingWindows ++ testWindows).flatten.foreach(_.setRandomly)
+
+    println("loaded up features, model.transitionTemplate.weightsSet.length: " + model.transitionTemplate.weights.value.length)
+    println("loaded up features, model.localTemplate.weightsSet.length: " + model.localTemplate.weights.value.length)
+
+    println("bin domain length: " + BinDomain.dimensionDomain.length)
+
     // val summary = InferByBPChainSum.infer(trainingWindows(0), model)
     // assertStringEquals(summary.logZ, "6.931471805599453")
     //assertStringEquals(summary.marginal(document.tokens.head.attr[Label]).proportions, "Proportions(0.5,0.5)")
-    (trainingWindows ++ testWindows).flatten.foreach(_.setRandomly)
     val examples = trainingWindows.map(new optimize.LikelihoodExample(_, model, InferByBPChainSum))
 
     val optimizer1 = new optimize.LBFGS with optimize.L2Regularization
@@ -193,8 +230,6 @@ object SVFactorie {
     Trainer.batchTrain(model.parameters, examples, optimizer=optimizer1)
 
 
-
-    val objective = HammingObjective
     println("*** Starting inference (#sentences=%d)".format(testWindows.map(_.size).sum))
     testWindows.foreach {
       w => cc.factorie.BP.inferChainMax(w.asSeq, model)
@@ -220,6 +255,7 @@ object SVFactorie {
       }
     }
 
+    serialize(model, LabelDomain, BinDomain, "model")
   }
 
   def realToCategoricalCumulativeBinnedFeatures(feature:Double, name:String, nullBin: Double, bins: Array[Double]) : Seq[String] = {
@@ -267,10 +303,10 @@ object SVFactorie {
       // last tested accuracy - 80%
 
       // use del/ins/flank (no zygosity) 72% -- up to 78% with interaction
-      val labelStr = delPres + delFlank + insPres + insFlank
+      // val labelStr = delPres + delFlank + insPres + insFlank
 
       // use just del/ins (no zygosity) accuracy 88% - 85%
-      // val labelStr = delPres + insPres
+      val labelStr = delPres + insPres
 
       val label = new Label(labelStr, loc)
 
