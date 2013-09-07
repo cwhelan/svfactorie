@@ -7,6 +7,7 @@ import scala.util.Random
 import scala.io.Source
 import cc.factorie.util.BinarySerializer
 import org.junit.Assert._
+import org.rogach.scallop._;
 
 /**
  * Created by IntelliJ IDEA.
@@ -168,50 +169,42 @@ object SVFactorie {
 
   def main(args:Array[String]): Unit = {
 
+    object Conf extends ScallopConf(args) {
+      val trainingDataDir = opt[String]()
+      val trainingDataSplit = opt[Double](default=Some(0.8))
+      val testDataDir = opt[String]()
+      val modelName = opt[String]()
+      val loadModel = toggle("loadModel")
+      val featureDescriptorFile = opt[String]()
+      val outputDir = opt[String]()
 
+      conflicts(loadModel, List(trainingDataDir, trainingDataDir))
+    }
 
     implicit val random = new scala.util.Random()
 
-    val windowDir = args(0)
-    val featureDescriptorFile = args(1)
+    val windowDir = Conf.trainingDataDir.get
+    val featureDescriptorFile = Conf.featureDescriptorFile.get
 
     val model = new SVModel
 
-    val featureDescriptors = loadFeatureDescriptors(featureDescriptorFile)
+    // todo: non-idiomatic scala, change this
+    val featureDescriptors = loadFeatureDescriptors(featureDescriptorFile.get)
+    val trainingDataFiles = windowDir.map(new File(_).listFiles.map(windowDir + _.getName)).get
 
-    val files = new File(windowDir).listFiles.map(windowDir + _.getName)
-
-    val numTrainingFiles: Int = (files.length * .8).round.toInt
-    println("Total files: " + files.length)
-    println("Train/Test: " + numTrainingFiles + "/" + (files.length - numTrainingFiles))
-    val trainingIndices = RandSet.rand(numTrainingFiles, 0, files.size - 1)
-    val trainingFiles = (0 to (files.length - 1)).filter(trainingIndices.contains(_)).map(files(_))
-    val testFiles = (0 to (files.length - 1)).filter(! trainingIndices.contains(_)).map(files(_))
+    val numTrainingFiles: Int = (trainingDataFiles.length * Conf.trainingDataSplit.get.get).round.toInt
+    println("Total files: " + trainingDataFiles.length)
+    println("Train/Test: " + numTrainingFiles + "/" + (trainingDataFiles.length - numTrainingFiles))
+    val trainingIndices = RandSet.rand(numTrainingFiles, 0, trainingDataFiles.size - 1)
+    val trainingFiles = (0 to (trainingDataFiles.length - 1)).filter(trainingIndices.contains).map(trainingDataFiles(_))
+    val testFiles = (0 to (trainingDataFiles.length - 1)).filter(! trainingIndices.contains(_)).map(trainingDataFiles(_))
 
     val trainingWindows = trainingFiles.map(load(_, featureDescriptors))
     val testWindows = testFiles.map(load(_, featureDescriptors))
 
     val allBins: Seq[Bin] = (trainingWindows ++ testWindows).flatten.map(_.bin)
 
-    // Add interaction features
-    println("Adding interaction features...")
-    allBins.foreach(bin => {
-      val l = bin.activeCategories
-      bin ++= l.map(_ => l).flatten.combinations(2).toList.filter(f => f(0) != f(1)).map(f => f(0) + "*" + f(1))
-    })
-
-    // Add features from next and previous tokens
-    println("Adding offset features...")
-    allBins.foreach(bin => {
-      if (bin.label.hasPrev) bin ++= bin.label.prev.bin.activeCategories.filter(!_.contains('@')).map(_+"@-1")
-      if (bin.label.hasNext) bin ++= bin.label.next.bin.activeCategories.filter(!_.contains('@')).map(_+"@+1")
-    })
-
-    println("Adding neighbor features...")
-    allBins.foreach(bin => {
-      bin ++= neighborFeatures(bin, -4)
-      bin ++= neighborFeatures(bin, 4)
-    })
+    initRelativeFeatures(allBins)
 
     (trainingWindows ++ testWindows).flatten.foreach(_.setRandomly)
 
@@ -245,7 +238,7 @@ object SVFactorie {
     print(windowsWithTruePredictions.map(w => w(0).bin.loc).mkString("\n"))
 
     for (w <- testWindows) {
-      val pw = new java.io.PrintWriter(new File("output/" + w(0).bin.loc + ".bed"))
+      val pw = new java.io.PrintWriter(new File(Conf.outputDir.get.get + w(0).bin.loc + ".bed"))
       try {
         for (label <- w) {
           pw.write(label.bin.loc + "\t" + label.target.categoryValue + "\t" + label.categoryValue + "\n")
@@ -255,7 +248,30 @@ object SVFactorie {
       }
     }
 
-    serialize(model, LabelDomain, BinDomain, "model")
+    Conf.modelName.foreach(serialize(model, LabelDomain, BinDomain, _))
+  }
+
+
+  def initRelativeFeatures(allBins: Seq[SVFactorie.Bin]) {
+    // Add interaction features
+    println("Adding interaction features...")
+    allBins.foreach(bin => {
+      val l = bin.activeCategories
+      bin ++= l.map(_ => l).flatten.combinations(2).toList.filter(f => f(0) != f(1)).map(f => f(0) + "*" + f(1))
+    })
+
+    // Add features from next and previous tokens
+    println("Adding offset features...")
+    allBins.foreach(bin => {
+      if (bin.label.hasPrev) bin ++= bin.label.prev.bin.activeCategories.filter(!_.contains('@')).map(_ + "@-1")
+      if (bin.label.hasNext) bin ++= bin.label.next.bin.activeCategories.filter(!_.contains('@')).map(_ + "@+1")
+    })
+
+    println("Adding neighbor features...")
+    allBins.foreach(bin => {
+      bin ++= neighborFeatures(bin, -4)
+      bin ++= neighborFeatures(bin, 4)
+    })
   }
 
   def realToCategoricalCumulativeBinnedFeatures(feature:Double, name:String, nullBin: Double, bins: Array[Double]) : Seq[String] = {
