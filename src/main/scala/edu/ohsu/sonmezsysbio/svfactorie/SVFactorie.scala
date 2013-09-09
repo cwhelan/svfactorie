@@ -16,6 +16,9 @@ import org.rogach.scallop._;
  * Time: 11:40 AM
  */
 object SVFactorie {
+
+  implicit val random = new scala.util.Random()
+
   // The variable classes
   object BinDomain extends CategoricalTensorDomain[String]
   class Bin(val loc:String, val label:Label) extends BinaryFeatureVectorVariable[String] {
@@ -148,65 +151,49 @@ object SVFactorie {
     val random = Random
 
     def rand (count: Int, lower: Int, upper: Int, sofar: Set[Int] = Set.empty): Set[Int] =
-      if (upper == 0) return sofar + 0 else
+      if (upper == 0) sofar + 0 else
         if (count == sofar.size) sofar else
           rand (count, lower, upper, sofar + (random.nextInt (upper-lower) + lower))
   }
 
   def neighborFeatures(bin : Bin, index : Int, current : Int = 0) : Set[String] = {
     if (Math.abs(current - index) <= 1) {
-      return Set.empty
+      Set.empty
     } else {
       val left = index < 0
       if (left && ! bin.label.hasPrev) return Set.empty
       if (! left && ! bin.label.hasNext) return Set.empty
       val neighbor = if (left) bin.label.prev.bin else bin.label.next.bin
-      return neighbor.activeCategories.filter(!_.contains('@')).map(_+"@<>").toSet.union(
+      neighbor.activeCategories.filter(!_.contains('@')).map(_+"@<>").toSet.union(
         neighborFeatures(neighbor, index, current + (if(left) -1 else 1)))
     }
 
   }
 
-  def main(args:Array[String]): Unit = {
 
-    object Conf extends ScallopConf(args) {
-      val trainingDataDir = opt[String]()
-      val trainingDataSplit = opt[Double](default=Some(0.8))
-      val testDataDir = opt[String]()
-      val modelName = opt[String]()
-      val loadModel = toggle("loadModel")
-      val featureDescriptorFile = opt[String]()
-      val outputDir = opt[String]()
 
-      conflicts(loadModel, List(trainingDataDir, trainingDataDir))
+  def trainAndValidateModel(trainingDataDir: String, validationSplitOption: Option[Double], featureDescriptors: SVFactorie.FeatureDescriptors, model: SVFactorie.SVModel, validationOutputDir: Option[String]) {
+    val directory: File = new File(trainingDataDir)
+    val trainingDataFiles = directory.listFiles.map(trainingDataDir + _.getName)
+
+    val validationSplit: Double = validationSplitOption match {
+      case None => 1.0
+      case Some(x: Double) => x
     }
-
-    implicit val random = new scala.util.Random()
-
-    val windowDir = Conf.trainingDataDir.get
-    val featureDescriptorFile = Conf.featureDescriptorFile.get
-
-    val model = new SVModel
-
-    // todo: non-idiomatic scala, change this
-    val featureDescriptors = loadFeatureDescriptors(featureDescriptorFile.get)
-    val trainingDataFiles = windowDir.map(new File(_).listFiles.map(windowDir + _.getName)).get
-
-    val numTrainingFiles: Int = (trainingDataFiles.length * Conf.trainingDataSplit.get.get).round.toInt
+    val numTrainingFiles: Int = (trainingDataFiles.length * validationSplit).round.toInt
     println("Total files: " + trainingDataFiles.length)
-    println("Train/Test: " + numTrainingFiles + "/" + (trainingDataFiles.length - numTrainingFiles))
+    println("Train/Validate: " + numTrainingFiles + "/" + (trainingDataFiles.length - numTrainingFiles))
     val trainingIndices = RandSet.rand(numTrainingFiles, 0, trainingDataFiles.size - 1)
     val trainingFiles = (0 to (trainingDataFiles.length - 1)).filter(trainingIndices.contains).map(trainingDataFiles(_))
-    val testFiles = (0 to (trainingDataFiles.length - 1)).filter(! trainingIndices.contains(_)).map(trainingDataFiles(_))
+    val validationFiles = (0 to (trainingDataFiles.length - 1)).filter(!trainingIndices.contains(_)).map(trainingDataFiles(_))
 
     val trainingWindows = trainingFiles.map(load(_, featureDescriptors))
-    val testWindows = testFiles.map(load(_, featureDescriptors))
+    val validationWindows = validationFiles.map(load(_, featureDescriptors))
 
-    val allBins: Seq[Bin] = (trainingWindows ++ testWindows).flatten.map(_.bin)
-
+    val allBins: Seq[Bin] = (trainingWindows ++ validationWindows).flatten.map(_.bin)
     initRelativeFeatures(allBins)
-
-    (trainingWindows ++ testWindows).flatten.foreach(_.setRandomly)
+    trainingWindows.flatten.foreach(_.setRandomly)
+    validationWindows.flatten.foreach(_.setRandomly)
 
     println("loaded up features, model.transitionTemplate.weightsSet.length: " + model.transitionTemplate.weights.value.length)
     println("loaded up features, model.localTemplate.weightsSet.length: " + model.localTemplate.weights.value.length)
@@ -220,37 +207,35 @@ object SVFactorie {
 
     val optimizer1 = new optimize.LBFGS with optimize.L2Regularization
     optimizer1.variance = 10000.0
-    Trainer.batchTrain(model.parameters, examples, optimizer=optimizer1)
+    Trainer.batchTrain(model.parameters, examples, optimizer = optimizer1)
 
-
-    println("*** Starting inference (#sentences=%d)".format(testWindows.map(_.size).sum))
-    testWindows.foreach {
+    println("*** Starting inference (#sentences=%d)".format(validationWindows.map(_.size).sum))
+    validationWindows.foreach {
       w => cc.factorie.BP.inferChainMax(w.asSeq, model)
     }
-    val accuracy: Double = objective.accuracy(testWindows.flatMap(_.asSeq))
-    println("test token accuracy=" + accuracy)
+    val accuracy: Double = objective.accuracy(validationWindows.flatMap(_.asSeq))
+    println("validation token accuracy=" + accuracy)
 
-    evaluationString(testWindows)
+    evaluationString(validationWindows)
 
-    val windowsWithTruePredictions = testWindows.filter(w => w.asSeq.count(b => b.categoryValue.toInt != 0 && b.categoryValue == b.target.categoryValue) > 0)
+    val windowsWithTruePredictions = validationWindows.filter(w => w.asSeq.count(b => b.categoryValue.toInt != 0 && b.categoryValue == b.target.categoryValue) > 0)
     println("Number of windows with a non-zero accurate prediction: " +
-      windowsWithTruePredictions.size + "/" + testWindows.size)
+      windowsWithTruePredictions.size + "/" + validationWindows.size)
     print(windowsWithTruePredictions.map(w => w(0).bin.loc).mkString("\n"))
 
-    for (w <- testWindows) {
-      val pw = new java.io.PrintWriter(new File(Conf.outputDir.get.get + w(0).bin.loc + ".bed"))
-      try {
-        for (label <- w) {
-          pw.write(label.bin.loc + "\t" + label.target.categoryValue + "\t" + label.categoryValue + "\n")
+    validationOutputDir.foreach(validationOutputDir =>
+      for (w <- validationWindows) {
+        val pw = new java.io.PrintWriter(new File(validationOutputDir + w(0).bin.loc + ".bed"))
+        try {
+          for (label <- w) {
+            pw.write(label.bin.loc + "\t" + label.target.categoryValue + "\t" + label.categoryValue + "\n")
+          }
+        } finally {
+          pw.close()
         }
-      } finally {
-        pw.close()
       }
-    }
-
-    Conf.modelName.foreach(serialize(model, LabelDomain, BinDomain, _))
+    )
   }
-
 
   def initRelativeFeatures(allBins: Seq[SVFactorie.Bin]) {
     // Add interaction features
@@ -345,6 +330,39 @@ object SVFactorie {
     }
     source.close()
     window
+  }
+
+  def main(args:Array[String]): Unit = {
+
+    object Conf extends ScallopConf(args) {
+      val featureDescriptorFile = opt[String]("featureDescriptorFile", required=true)
+      val trainingDataDir = opt[String]("trainingDataDir")
+      val validationSplit = opt[Double]("validationSplit", default=Some(0.8))
+      val modelName = opt[String]("modelName")
+      val validationOutputDir = opt[String]("validationOutputDir")
+      val testDataDir = opt[String]("testDataDir")
+
+    }
+
+    val featureDescriptorFile = Conf.featureDescriptorFile.get
+
+    val model = new SVModel
+
+    // todo: non-idiomatic scala, change this
+    val featureDescriptors = loadFeatureDescriptors(featureDescriptorFile.get)
+
+    Conf.trainingDataDir.get match {
+      case Some(trainingDataDir : String) => {
+        trainAndValidateModel(trainingDataDir, Conf.validationSplit.get, featureDescriptors, model, Conf.validationOutputDir.get)
+        Conf.modelName.foreach(serialize(model, LabelDomain, BinDomain, _))
+      }
+      case None => {
+        // load model from serialized file
+        Conf.modelName.foreach(deserialize(model, LabelDomain, BinDomain, _))
+      }
+    }
+
+
   }
 
 }
