@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import sys
+import gzip
 import changePointDetection
 
 window_file = sys.argv[1]
@@ -16,5 +17,5 @@ for line in open(window_file, "r"):
     if segFile != current_seg_file:
         fp = gzip.open(segFile)
         current_seg_file = segFile
-    changePointDetection.detect_change_points(int(start), int(end), fp, 100, 7, sys.stdout, printBed=True, chrom=chrom, resolution=25)
+    changePointDetection.detect_change_points(int(start) - 125, int(end) + 100, fp, 100, 7, sys.stdout, printBed=True, chrom=chrom, resolution=25)
 
