@@ -1,7 +1,7 @@
 package edu.ohsu.sonmezsysbio.svfactorie
 
 import cc.factorie._
-import java.io.File
+import java.io.{PrintWriter, File}
 import cc.factorie.optimize.Trainer
 import scala.util.Random
 import scala.io.Source
@@ -20,7 +20,11 @@ object SVFactorie {
   implicit val random = new scala.util.Random()
 
   // The variable classes
-  object BinDomain extends CategoricalTensorDomain[String]
+  object BinDomain extends CategoricalTensorDomain[String] {
+    override def dimensionName(idx:Int):String = {
+      BinDomain.dimensionDomain(idx).category.toString
+    }
+  }
   class Bin(val loc:String, val label:Label) extends BinaryFeatureVectorVariable[String] {
     def domain = BinDomain
   }
@@ -88,6 +92,29 @@ object SVFactorie {
     this += biasTemplate
     this += localTemplate
     this += transitionTemplate
+
+    def printWeights(writer : PrintWriter) {
+      writer.println("TRANSITION TEMPLATE")
+      val namedWeightsTx =
+        for ((val0, idx0) <- LabelDomain.dimensionDomain.zipWithIndex; (val1, idx1) <- LabelDomain.dimensionDomain.zipWithIndex) yield {
+          val w = transitionTemplate.weights.value(idx0, idx1)
+          ((LabelDomain.dimensionName(val0.intValue), LabelDomain.dimensionName(val1.intValue)), w)
+        }
+      for (((cat0, cat1), w) <- namedWeightsTx.sortBy(-_._2)) {
+        writer.println(cat0 + "\t" + cat1 + "\t" + w)
+      }
+
+      writer.println("\n")
+      writer.println("LOCAL TEMPLATE")
+      val namedWeights =
+        for ((val0, idx0) <- LabelDomain.dimensionDomain.zipWithIndex; (val1, idx1) <- BinDomain.dimensionDomain.zipWithIndex) yield {
+          val w = localTemplate.weights.value(idx0, idx1)
+          ((LabelDomain.dimensionName(val0.intValue), BinDomain.dimensionName(val1.intValue)), w)
+        }
+      for (((cat0, cat1), w) <- namedWeights.sortBy(-_._2)) {
+        writer.println(cat0 + "\t" + cat1 + "\t" + w)
+      }
+    }
   }
 
   class FeatureDescriptors(val features : Array[_ <:FeatureDescriptor])
@@ -129,6 +156,8 @@ object SVFactorie {
     val featuresDomainFile = new File(prefix + "-featuresDomain")
     BinarySerializer.serialize(featuresDomain.dimensionDomain, featuresDomainFile)
     println("saved features domain, number of features = " + featuresDomain.dimensionDomain.size)
+    val textWeightsFile = new File(prefix + "-weights.txt")
+    model.printWeights(new PrintWriter(textWeightsFile))
   }
 
   def deserialize(model : SVModel, labelDomain : CategoricalDomain[String], featuresDomain : CategoricalTensorDomain[String], prefix: String) {
@@ -363,10 +392,10 @@ object SVFactorie {
       // last tested accuracy - 80%
 
       // use del/ins/flank (no zygosity) 72% -- up to 78% with interaction
-      // val labelStr = delPres + delFlank + insPres + insFlank
+      val labelStr = delPres + delFlank + insPres + insFlank
 
       // use just del/ins (no zygosity) accuracy 88% - 85%
-      val labelStr = delPres + insPres
+      // val labelStr = delPres + insPres
 
       val label = new Label(labelStr, loc)
 
