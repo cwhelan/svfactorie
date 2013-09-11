@@ -31,14 +31,20 @@ object BedFileZipper {
   }
 
   def parseLine(line : String) : (Location, Array[String]) = {
-    val fields = line.split("\t")
-    val loc = new Location(fields(0), fields(1).toInt, fields(2).toInt)
-    val values = if (fields.length == 3) { Array("1") } else { fields.slice(3,fields.length) }
-    (loc, values)
+    if (line.isEmpty) {
+      (new Location("AAA", 0, 0), Array("0"))
+    } else {
+      val fields = line.split("\t")
+      val loc = new Location(fields(0), fields(1).toInt, fields(2).toInt)
+      val values = if (fields.length == 3) { Array("1") } else { fields.slice(3,fields.length) }
+      (loc, values)
+    }
   }
 
   class FeatureFile(val fileLines:Iterator[String]) {
-    var (curLoc, curVals) = parseLine(fileLines.next())
+    var (curLoc, curVals) =
+      if (fileLines.hasNext) { parseLine(fileLines.next()) }
+      else { (new Location("AAA", 0, 0), Array("0")) }
     val numFields = curVals.length
     def getFeatures(loc : Location) : Array[String] = {
       if (curLoc < loc && ! curLoc.overlaps(loc) && fileLines.hasNext) {
