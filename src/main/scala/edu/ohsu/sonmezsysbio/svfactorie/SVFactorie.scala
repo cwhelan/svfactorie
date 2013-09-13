@@ -274,9 +274,16 @@ object SVFactorie {
     //assertStringEquals(summary.marginal(document.tokens.head.attr[Label]).proportions, "Proportions(0.5,0.5)")
     val examples = trainingWindows.map(new optimize.LikelihoodExample(_, model, InferByBPChainSum))
 
-    val optimizer1 = new optimize.LBFGS with optimize.L2Regularization
-    optimizer1.variance = 10000.0
-    Trainer.batchTrain(model.parameters, examples, optimizer = optimizer1)
+    //val optimizer1 = new optimize.LBFGS with optimize.L2Regularization
+    //optimizer1.variance = 10000.0
+
+    // l1Factor:Double = 0.02, l2Factor:Double = 0.000001, lr: Double = 1.0
+    val lr=1.0
+    val l1Factor = 0.02
+    val l2Factor = 0.000001
+    val optimizer = new optimize.AdaGradRDA(rate=lr, l1=l1Factor/examples.length, l2=l2Factor/examples.length)
+
+    Trainer.batchTrain(model.parameters, examples, optimizer = optimizer)
 
     if (validationFiles.length > 0) {
       predict(validationWindows, model, validationOutputDir)
