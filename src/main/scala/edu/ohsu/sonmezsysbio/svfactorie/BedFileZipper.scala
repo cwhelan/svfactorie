@@ -49,7 +49,8 @@ object BedFileZipper {
     def getFeatures(loc : Location) : Array[String] = {
       if (curLoc < loc && ! curLoc.overlaps(loc) && fileLines.hasNext) {
         val filteredLines: Iterator[String] = fileLines.dropWhile(s => {
-          parseLine(s)._1 < loc
+          val line: (Location, Array[String]) = parseLine(s)
+          line._1 < loc && ! line._1.overlaps(loc)
         })
         if (filteredLines.hasNext) {
           val (lineLoc, lineVals) = parseLine(filteredLines.next())
