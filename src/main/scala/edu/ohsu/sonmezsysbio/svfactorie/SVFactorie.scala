@@ -19,8 +19,10 @@ object SVFactorie {
 
   implicit val random = new scala.util.Random()
 
+  val FeatureNameSeparator = "|"
+
   // The variable classes
-  object BinDomain extends CategoricalTensorDomain[String] {
+  object BinDomain extends CategoricalDomain[String] {
     override def dimensionName(idx:Int):String = {
       BinDomain.dimensionDomain(idx).category.toString
     }
@@ -41,10 +43,10 @@ object SVFactorie {
   }
   class BooleanFeatureDescriptor(column : Int, name : String) extends FeatureDescriptor {
     def toFeatures(featureList : Array[String]) : Seq[String] = {
-      if (featureList(column) == "1") { Seq(name) } else Seq()
+      if (featureList(column) == "1") { Seq(name + FeatureNameSeparator) } else Seq()
     }
     def possibleFeatures() = {
-      Array(name)
+      Array(name + FeatureNameSeparator)
     }
   }
   class CumulativeBinnedRealFeatureDescriptor(column : Int, name : String, nullBin : Double, bins : Array[Double])
@@ -54,7 +56,7 @@ object SVFactorie {
       realToCategoricalCumulativeBinnedFeatures(featureVal, name, nullBin, bins)
     }
     def possibleFeatures() = {
-      Array(name + "-N") ++ bins.map(name + ">" + _)
+      Array(name +FeatureNameSeparator+ "-N") ++ bins.map(name + FeatureNameSeparator+ ">" + _)
     }
   }
 
@@ -65,7 +67,7 @@ object SVFactorie {
       realToCategoricalBinnedFeatures(featureVal, name, bins)
     }
     def possibleFeatures() = {
-      (0 to bins.size).map(name + _)
+      (0 to bins.size).map(name + FeatureNameSeparator+ _)
     }
   }
 
@@ -119,7 +121,7 @@ object SVFactorie {
 
   class FeatureDescriptors(val features : Array[_ <:FeatureDescriptor])
 
-  def loadFeatureDescriptors(featureFile : String, featureDomain : CategoricalTensorDomain[String]) = {
+  def loadFeatureDescriptors(featureFile : String, featureDomain : CategoricalDomain[String]) = {
     val source = Source.fromFile(new File(featureFile))
     val lines =  source.getLines().filter(! _.startsWith("#")).map(_.split("\t"))
     val featureDescriptors = lines.filter(_(0) == "feature").map(
@@ -130,7 +132,7 @@ object SVFactorie {
       }
     ).toArray
     featureDescriptors.foreach(f => f.possibleFeatures().foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_)))
-    featureDomain.dimensionDomain.combinations(2).toList.filter(f => f(0) != f(1))
+    featureDomain.dimensionDomain.combinations(2).toList.filter(f => f(0) != f(1) && featureNamesNotEqual(f(0).toString(), f(1).toString()))
       .map(f => f(0) + "*" + f(1))
       .foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_))
     featureDomain.dimensionDomain.filter(f => ! f.toString().contains("@")).map(_ + "@-1")
@@ -144,7 +146,7 @@ object SVFactorie {
   }
 
 
-  def serialize(model : SVModel, labelDomain : CategoricalDomain[String], featuresDomain : CategoricalTensorDomain[String], prefix: String) {
+  def serialize(model : SVModel, labelDomain : CategoricalDomain[String], featuresDomain : CategoricalDomain[String], prefix: String) {
     val modelFile = new File(prefix + "-model")
     if (modelFile.getParentFile ne null)
       modelFile.getParentFile.mkdirs()
@@ -160,7 +162,7 @@ object SVFactorie {
     model.printWeights(new PrintWriter(textWeightsFile))
   }
 
-  def deserialize(model : SVModel, labelDomain : CategoricalDomain[String], featuresDomain : CategoricalTensorDomain[String], prefix: String) {
+  def deserialize(model : SVModel, labelDomain : CategoricalDomain[String], featuresDomain : CategoricalDomain[String], prefix: String) {
     val featuresDomainFile = new File(prefix + "-featuresDomain")
     assert(featuresDomainFile.exists(), "Trying to load inexistent label domain file: '" + prefix + "-featuresDomain'")
     BinarySerializer.deserialize(featuresDomain.dimensionDomain, featuresDomainFile)
@@ -272,18 +274,33 @@ object SVFactorie {
     // val summary = InferByBPChainSum.infer(trainingWindows(0), model)
     // assertStringEquals(summary.logZ, "6.931471805599453")
     //assertStringEquals(summary.marginal(document.tokens.head.attr[Label]).proportions, "Proportions(0.5,0.5)")
+
+    // begin batch training code
     val examples = trainingWindows.map(new optimize.LikelihoodExample(_, model, InferByBPChainSum))
 
-    //val optimizer1 = new optimize.LBFGS with optimize.L2Regularization
-    //optimizer1.variance = 10000.0
-
-    // l1Factor:Double = 0.02, l2Factor:Double = 0.000001, lr: Double = 1.0
-    val lr=1.0
-    val l1Factor = 0.02
-    val l2Factor = 0.000001
-    val optimizer = new optimize.AdaGradRDA(rate=lr, l1=l1Factor/examples.length, l2=l2Factor/examples.length)
-
+    // LBGFS
+    val optimizer = new optimize.LBFGS with optimize.L2Regularization
+    optimizer.variance = 10000.0
+//
+//
     Trainer.batchTrain(model.parameters, examples, optimizer = optimizer)
+
+    // begin online trainer code
+//    val sampler = new GibbsSampler(model, HammingObjective)
+//
+//    val trainLabels : Seq[Label] = trainingWindows.flatten.map(_.bin).map(_.label)
+//    val sampleRankExamples = trainLabels.map(t => new optimize.SampleRankExample(t, sampler))
+//
+//    Trainer.onlineTrain(model.parameters, sampleRankExamples)
+
+    // AdaGrad
+//        val lr=1.0
+//        val l1Factor = 0.02
+//        val l2Factor = 0.000001
+//        val optimizer = new optimize.AdaGradRDA(rate=lr, l1=l1Factor/examples.length, l2=l2Factor/examples.length)
+
+
+//    Trainer.onlineTrain(model.parameters, examples, maxIterations=10, optimizer=optimizer, useParallelTrainer = false)
 
     if (validationFiles.length > 0) {
       predict(validationWindows, model, validationOutputDir)
@@ -333,7 +350,7 @@ object SVFactorie {
     println("Adding interaction features...")
     allBins.foreach(bin => {
       val l = bin.activeCategories
-      bin ++= l.map(_ => l).flatten.combinations(2).toList.filter(f => f(0) != f(1)).map(f => f(0) + "*" + f(1))
+      bin ++= l.map(_ => l).flatten.combinations(2).toList.filter(f => f(0) != f(1) && featureNamesNotEqual(f(0), f(1))).map(f => f(0) + "*" + f(1))
     })
     println("bin domain length: " + BinDomain.dimensionDomain.length)
 
@@ -353,21 +370,26 @@ object SVFactorie {
     println("bin domain length: " + BinDomain.dimensionDomain.length)
   }
 
+
+  def featureNamesNotEqual(f1: String, f2: String): Boolean = {
+    f1.substring(0, f1.indexOf(FeatureNameSeparator)) != f2.substring(0, f2.indexOf(FeatureNameSeparator))
+  }
+
   def realToCategoricalCumulativeBinnedFeatures(feature:Double, name:String, nullBin: Double, bins: Array[Double]) : Seq[String] = {
     if (feature <= nullBin) {
-      List(name + "-N")
+      List(name + FeatureNameSeparator+ "-N")
     } else {
-      bins.filter(_ < feature).map(name + ">" + _)
+      bins.filter(_ < feature).map(name + FeatureNameSeparator+ ">" + _)
     }
   }
 
   def realToCategoricalBinnedFeatures(feature:Double, name:String, bins: Array[Double]) : Seq[String] = {
      if (feature <= bins(0)) {
-       List(name + "0")
+       List(name + FeatureNameSeparator+ "0")
      } else if (feature > bins(bins.size - 1)) {
-       List(name + bins.size)
+       List(name + FeatureNameSeparator+ bins.size)
      } else {
-       (0 to bins.size - 2).filter(i => feature > bins(i) && feature <= bins(i + 1)).map(_ + 1).map(name + _)
+       (0 to bins.size - 2).filter(i => feature > bins(i) && feature <= bins(i + 1)).map(_ + 1).map(name +FeatureNameSeparator+ _)
      }
   }
 
