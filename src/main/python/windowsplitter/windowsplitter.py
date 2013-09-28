@@ -19,7 +19,7 @@ num_fields = bins_in_windows.field_count(1)
 for bin_in_window in bins_in_windows:
     sys.stderr.write(str(bin_in_window))
     current_window = pybedtools.Interval(bin_in_window[num_fields - 4], int(bin_in_window[num_fields - 3]), int(bin_in_window[num_fields - 2]))
-    sys.stderr.write("current window = {0}\n".format(current_window))
+    # sys.stderr.write("current window = {0}\n".format(current_window))
     # if prev_window is None or not intervals_identical(current_window, prev_window):
     #     sys.stderr.write("new window\n")
     #     if outfile is not None:
