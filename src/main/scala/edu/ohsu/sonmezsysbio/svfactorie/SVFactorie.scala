@@ -364,8 +364,8 @@ object SVFactorie {
 
     println("Adding neighbor features...")
     allBins.foreach(bin => {
-      bin ++= neighborFeatures(bin, -4)
-      bin ++= neighborFeatures(bin, 4)
+      bin ++= neighborFeatures(bin, -5)
+      bin ++= neighborFeatures(bin, 5)
     })
     println("bin domain length: " + BinDomain.dimensionDomain.length)
   }
@@ -409,12 +409,12 @@ object SVFactorie {
       val delHap1: Boolean = fields(fields.length - numLabelFields) == "1"
       val delHap2: Boolean = fields(fields.length - numLabelFields + 1) == "1"
       val delPres = if (delHap1 || delHap2) "1" else "0"
-      val delFlank = fields(fields.length - numLabelFields + 2) == "1"
+      val delFlank = fields(fields.length - numLabelFields + 2)
 
       val insHap1: Boolean = fields(fields.length - numLabelFields + 3) == "1"
       val insHap2: Boolean = fields(fields.length - numLabelFields + 4)  == "1"
       val insPres = if (insHap1 || insHap2) "1" else "0"
-      val insFlank = fields(fields.length - numLabelFields + 5) == "1"
+      val insFlank = fields(fields.length - numLabelFields + 5)
 
       // use full label
       // val labelStr = fields.slice(fields.length - numLabelFields, fields.length).mkString("")
