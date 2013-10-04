@@ -40,6 +40,7 @@ object SVFactorie {
   trait FeatureDescriptor {
     def toFeatures(featureList : Array[String]) : Seq[String]
     def possibleFeatures() : Seq[String]
+    def print(writer : PrintWriter) : Unit
   }
   class BooleanFeatureDescriptor(column : Int, name : String) extends FeatureDescriptor {
     def toFeatures(featureList : Array[String]) : Seq[String] = {
@@ -47,6 +48,9 @@ object SVFactorie {
     }
     def possibleFeatures() = {
       Array(name + FeatureNameSeparator)
+    }
+    def print(writer : PrintWriter) = {
+      writer.println("feature\tboolean\t" + column + "\t" + name)
     }
   }
   class CumulativeBinnedRealFeatureDescriptor(column : Int, name : String, nullBin : Double, bins : Array[Double])
@@ -58,6 +62,10 @@ object SVFactorie {
     def possibleFeatures() = {
       Array(name +FeatureNameSeparator+ "-N") ++ bins.map(name + FeatureNameSeparator+ ">" + _)
     }
+    def print(writer : PrintWriter) = {
+      writer.println("feature\tcumulativeBinnedReal\t" + column + "\t" + name + "\t" + nullBin + "\t" + bins.mkString(","))
+    }
+
   }
 
   class BinnedRealFeatureDescriptor(column : Int, name : String, bins : Array[Double])
@@ -69,9 +77,12 @@ object SVFactorie {
     def possibleFeatures() = {
       (0 to bins.size).map(name + FeatureNameSeparator+ _)
     }
+    def print(writer : PrintWriter) = {
+      writer.println("feature\binnedReal\t" + column + "\t" + name + "\t" + bins.mkString(","))
+    }
   }
 
-  class SVModel extends TemplateModel with Parameters {
+  class SVModel(featureDescriptors : FeatureDescriptors) extends TemplateModel with Parameters {
       // Bias term on each individual label
       val biasTemplate = new DotTemplateWithStatistics1[Label] {
         //def statisticsDomains = Tuple1(LabelDomain)
@@ -95,7 +106,11 @@ object SVFactorie {
     this += localTemplate
     this += transitionTemplate
 
-    def printWeights(writer : PrintWriter) {
+    def print(writer : PrintWriter) {
+      writer.println("FEATURE DESCRIPTORS")
+      featureDescriptors.print(writer)
+
+      writer.println("\n")
       writer.println("TRANSITION TEMPLATE")
       val namedWeightsTx =
         for ((val0, idx0) <- LabelDomain.dimensionDomain.zipWithIndex; (val1, idx1) <- LabelDomain.dimensionDomain.zipWithIndex) yield {
@@ -119,7 +134,11 @@ object SVFactorie {
     }
   }
 
-  class FeatureDescriptors(val features : Array[_ <:FeatureDescriptor])
+  class FeatureDescriptors(val features : Array[_ <:FeatureDescriptor]) {
+    def print(writer : PrintWriter) {
+
+    }
+  }
 
   def loadFeatureDescriptors(featureFile : String, featureDomain : CategoricalDomain[String]) = {
     val source = Source.fromFile(new File(featureFile))
@@ -159,7 +178,7 @@ object SVFactorie {
     BinarySerializer.serialize(featuresDomain.dimensionDomain, featuresDomainFile)
     println("saved features domain, number of features = " + featuresDomain.dimensionDomain.size)
     val textWeightsFile = new File(prefix + "-weights.txt")
-    model.printWeights(new PrintWriter(textWeightsFile))
+    model.print(new PrintWriter(textWeightsFile))
   }
 
   def deserialize(model : SVModel, labelDomain : CategoricalDomain[String], featuresDomain : CategoricalDomain[String], prefix: String) {
@@ -429,17 +448,6 @@ object SVFactorie {
       val label = new Label(labelStr, loc)
 
       val featureValues = fields.slice(3, fields.length - numLabelFields)
-
-//      realToCategoricalCumulativeBinnedFeatures(features(0), "w0", -0.01, Array(.25, .35, .5, 1)).map(label.bin +=)
-//      realToCategoricalBinnedFeatures(features(1), "mu1", Array(255.0, 285.0, 300.0, 315.0, 345.0, 360.0)).map(label.bin +=)
-//      realToCategoricalCumulativeBinnedFeatures(features(2), "lr", 0, Array(.5, 1, 2, 5, 10, 100, 1000)).map(label.bin +=)
-//      //realToCategoricalFeatures(features(4), "cov", 3, Array(10.0, 20, 40, 100)).map(label.bin +=)
-//      realToCategoricalCumulativeBinnedFeatures(features(5), "ccov", 3, Array(10.0, 20, 40, 100)).map(label.bin +=)
-//      realToCategoricalCumulativeBinnedFeatures(features(6), "singletons", 0, Array(1.0,3,5,10)).map(label.bin +=)
-//      realToCategoricalCumulativeBinnedFeatures(features(7), "changePoint", 0, Array(10.0,20,30,50,100)).map(label.bin +=)
-//
-//      if (fields(11) == "1") label.bin += "simple_repeat"
-//      if (fields(12) == "1") label.bin += "repeat"
 
       featureDescriptors.features.map(_.toFeatures(featureValues)).flatten.map(label.bin +=)
 
