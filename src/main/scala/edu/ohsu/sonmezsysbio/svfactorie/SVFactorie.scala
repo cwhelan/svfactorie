@@ -4,7 +4,6 @@ import cc.factorie._
 import java.io.{PrintWriter, File}
 import cc.factorie.optimize.Trainer
 import scala.util.Random
-import scala.io.Source
 import cc.factorie.util.BinarySerializer
 import org.junit.Assert._
 import org.rogach.scallop._
@@ -18,8 +17,6 @@ import org.rogach.scallop._
 object SVFactorie {
 
   implicit val random = new scala.util.Random()
-
-  val FeatureNameSeparator = "|"
 
   // The variable classes
   object BinDomain extends CategoricalDomain[String] {
@@ -36,51 +33,6 @@ object SVFactorie {
     def domain = LabelDomain
   }
   class Window extends Chain[Window,Label]
-
-  trait FeatureDescriptor {
-    def toFeatures(featureList : Array[String]) : Seq[String]
-    def possibleFeatures() : Seq[String]
-    def print(writer : PrintWriter) : Unit
-  }
-  class BooleanFeatureDescriptor(column : Int, name : String) extends FeatureDescriptor {
-    def toFeatures(featureList : Array[String]) : Seq[String] = {
-      if (featureList(column) == "1") { Seq(name + FeatureNameSeparator) } else Seq()
-    }
-    def possibleFeatures() = {
-      Array(name + FeatureNameSeparator)
-    }
-    def print(writer : PrintWriter) = {
-      writer.println("feature\tboolean\t" + column + "\t" + name)
-    }
-  }
-  class CumulativeBinnedRealFeatureDescriptor(column : Int, name : String, nullBin : Double, bins : Array[Double])
-    extends FeatureDescriptor {
-    def toFeatures(featureList : Array[String]) : Seq[String] = {
-      val featureVal = if (featureList(column) == "inf" || featureList(column) == "nan") -1.0 else featureList(column).toDouble
-      realToCategoricalCumulativeBinnedFeatures(featureVal, name, nullBin, bins)
-    }
-    def possibleFeatures() = {
-      Array(name +FeatureNameSeparator+ "-N") ++ bins.map(name + FeatureNameSeparator+ ">" + _)
-    }
-    def print(writer : PrintWriter) = {
-      writer.println("feature\tcumulativeBinnedReal\t" + column + "\t" + name + "\t" + nullBin + "\t" + bins.mkString(","))
-    }
-
-  }
-
-  class BinnedRealFeatureDescriptor(column : Int, name : String, bins : Array[Double])
-    extends FeatureDescriptor {
-    def toFeatures(featureList : Array[String]) : Seq[String] = {
-      val featureVal = if (featureList(column) == "inf" || featureList(column) == "nan") -1.0 else featureList(column).toDouble
-      realToCategoricalBinnedFeatures(featureVal, name, bins)
-    }
-    def possibleFeatures() = {
-      (0 to bins.size).map(name + FeatureNameSeparator+ _)
-    }
-    def print(writer : PrintWriter) = {
-      writer.println("feature\binnedReal\t" + column + "\t" + name + "\t" + bins.mkString(","))
-    }
-  }
 
   class SVModel(featureDescriptors : FeatureDescriptors) extends TemplateModel with Parameters {
       // Bias term on each individual label
@@ -134,35 +86,6 @@ object SVFactorie {
     }
   }
 
-  class FeatureDescriptors(val features : Array[_ <:FeatureDescriptor]) {
-    def print(writer : PrintWriter) {
-
-    }
-  }
-
-  def loadFeatureDescriptors(featureFile : String, featureDomain : CategoricalDomain[String]) = {
-    val source = Source.fromFile(new File(featureFile))
-    val lines =  source.getLines().filter(! _.startsWith("#")).map(_.split("\t"))
-    val featureDescriptors = lines.filter(_(0) == "feature").map(
-      f => f(1) match {
-        case "boolean" => new BooleanFeatureDescriptor(f(2).toInt, f(3))
-        case "cumulativeBinnedReal" => new CumulativeBinnedRealFeatureDescriptor(f(2).toInt, f(3), f(4).toDouble, f(5).split(",").map(_.toDouble))
-        case "binnedReal" => new BinnedRealFeatureDescriptor(f(2).toInt, f(3), f(4).split(",").map(_.toDouble))
-      }
-    ).toArray
-    featureDescriptors.foreach(f => f.possibleFeatures().foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_)))
-    featureDomain.dimensionDomain.combinations(2).toList.filter(f => f(0) != f(1) && featureNamesNotEqual(f(0).toString(), f(1).toString()))
-      .map(f => f(0) + "*" + f(1))
-      .foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_))
-    featureDomain.dimensionDomain.filter(f => ! f.toString().contains("@")).map(_ + "@-1")
-      .foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_))
-    featureDomain.dimensionDomain.filter(f => ! f.toString().contains("@")).map(_ + "@+1")
-      .foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_))
-    featureDomain.dimensionDomain.filter(f => ! f.toString().contains("@")).map(_ + "@<>")
-      .foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_))
-    featureDomain.freeze()
-    new FeatureDescriptors(featureDescriptors)
-  }
 
 
   def serialize(model : SVModel, labelDomain : CategoricalDomain[String], featuresDomain : CategoricalDomain[String], prefix: String) {
@@ -224,30 +147,13 @@ object SVFactorie {
 
   object RandSet {
     val random = Random
-
     def rand (count: Int, lower: Int, upper: Int, sofar: Set[Int] = Set.empty): Set[Int] =
       if (upper == 0) sofar + 0 else
         if (count == sofar.size) sofar else
           rand (count, lower, upper, sofar + (random.nextInt (upper-lower) + lower))
   }
 
-  def neighborFeatures(bin : Bin, index : Int, current : Int = 0) : Set[String] = {
-    if (Math.abs(current - index) <= 1) {
-      Set.empty
-    } else {
-      val left = index < 0
-      if (left && ! bin.label.hasPrev) return Set.empty
-      if (! left && ! bin.label.hasNext) return Set.empty
-      val neighbor = if (left) bin.label.prev.bin else bin.label.next.bin
-      neighbor.activeCategories.filter(!_.contains('@')).map(_+"@<>").toSet.union(
-        neighborFeatures(neighbor, index, current + (if(left) -1 else 1)))
-    }
-
-  }
-
-
-
-  def trainAndValidateModel(trainingDataDir: String, validationSplitOption: Option[Double], featureDescriptors: SVFactorie.FeatureDescriptors, model: SVFactorie.SVModel, validationOutputDir: Option[String]) {
+  def trainAndValidateModel(trainingDataDir: String, validationSplitOption: Option[Double], featureDescriptors: FeatureDescriptors, model: SVFactorie.SVModel, validationOutputDir: Option[String]) {
     val directory: File = new File(trainingDataDir)
     val trainingDataFiles = directory.listFiles.map(trainingDataDir + _.getName)
 
@@ -281,7 +187,7 @@ object SVFactorie {
     println("bin domain length: " + BinDomain.dimensionDomain.length)
 
     val allBins: Seq[Bin] = (trainingWindows ++ validationWindows).flatten.map(_.bin)
-    initRelativeFeatures(allBins)
+    FeatureDescriptor.initRelativeFeatures(allBins)
     trainingWindows.flatten.foreach(_.setRandomly)
     validationWindows.flatten.foreach(_.setRandomly)
 
@@ -364,55 +270,6 @@ object SVFactorie {
     )
   }
 
-  def initRelativeFeatures(allBins: Seq[SVFactorie.Bin]) {
-    // Add interaction features
-    println("Adding interaction features...")
-    allBins.foreach(bin => {
-      val l = bin.activeCategories
-      bin ++= l.map(_ => l).flatten.combinations(2).toList.filter(f => f(0) != f(1) && featureNamesNotEqual(f(0), f(1))).map(f => f(0) + "*" + f(1))
-    })
-    println("bin domain length: " + BinDomain.dimensionDomain.length)
-
-    // Add features from next and previous tokens
-    println("Adding offset features...")
-    allBins.foreach(bin => {
-      if (bin.label.hasPrev) bin ++= bin.label.prev.bin.activeCategories.filter(!_.contains('@')).map(_ + "@-1")
-      if (bin.label.hasNext) bin ++= bin.label.next.bin.activeCategories.filter(!_.contains('@')).map(_ + "@+1")
-    })
-    println("bin domain length: " + BinDomain.dimensionDomain.length)
-
-    println("Adding neighbor features...")
-    allBins.foreach(bin => {
-      bin ++= neighborFeatures(bin, -5)
-      bin ++= neighborFeatures(bin, 5)
-    })
-    println("bin domain length: " + BinDomain.dimensionDomain.length)
-  }
-
-
-  def featureNamesNotEqual(f1: String, f2: String): Boolean = {
-    f1.substring(0, f1.indexOf(FeatureNameSeparator)) != f2.substring(0, f2.indexOf(FeatureNameSeparator))
-  }
-
-  def realToCategoricalCumulativeBinnedFeatures(feature:Double, name:String, nullBin: Double, bins: Array[Double]) : Seq[String] = {
-    if (feature <= nullBin) {
-      List(name + FeatureNameSeparator+ "-N")
-    } else {
-      bins.filter(_ < feature).map(name + FeatureNameSeparator+ ">" + _)
-    }
-  }
-
-  def realToCategoricalBinnedFeatures(feature:Double, name:String, bins: Array[Double]) : Seq[String] = {
-     if (feature <= bins(0)) {
-       List(name + FeatureNameSeparator+ "0")
-     } else if (feature > bins(bins.size - 1)) {
-       List(name + FeatureNameSeparator+ bins.size)
-     } else {
-       (0 to bins.size - 2).filter(i => feature > bins(i) && feature <= bins(i + 1)).map(_ + 1).map(name +FeatureNameSeparator+ _)
-     }
-  }
-
-
   def load(filename:String, featureDescriptors : FeatureDescriptors) : Window = {
     import scala.io.Source
 
@@ -468,7 +325,7 @@ object SVFactorie {
     val testWindows = testDataFiles.map(load(_, descriptors))
 
     val allBins: Seq[Bin] = testWindows.flatten.map(_.bin)
-    initRelativeFeatures(allBins)
+    FeatureDescriptor.initRelativeFeatures(allBins)
     testWindows.flatten.foreach(_.setRandomly)
 
     println("loaded up features, model.transitionTemplate.weightsSet.length: " + model.transitionTemplate.weights.value.length)
@@ -493,10 +350,11 @@ object SVFactorie {
 
     val featureDescriptorFile = Conf.featureDescriptorFile.get
 
-    val model = new SVModel
-
     // todo: non-idiomatic scala, change this
-    val featureDescriptors = loadFeatureDescriptors(featureDescriptorFile.get, BinDomain)
+    val featureDescriptors = FeatureDescriptor.loadFeatureDescriptors(featureDescriptorFile.get, BinDomain)
+
+    val model = new SVModel(featureDescriptors)
+
 
     Conf.trainingDataDir.get match {
       case Some(trainingDataDir : String) => {
