@@ -87,8 +87,8 @@ object FeatureDescriptor {
 
     println("Adding neighbor features...")
     allBins.foreach(bin => {
-      bin ++= neighborFeatures(bin, -5)
-      bin ++= neighborFeatures(bin, 5)
+      bin ++= neighborFeatures(bin, -15)
+      bin ++= neighborFeatures(bin, 15)
     })
     println("bin domain length: " + BinDomain.dimensionDomain.length)
   }
