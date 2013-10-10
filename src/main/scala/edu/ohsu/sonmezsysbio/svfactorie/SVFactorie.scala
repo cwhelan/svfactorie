@@ -138,12 +138,37 @@ object SVFactorie {
   }
 
 
-  def predict(windowsWindows: IndexedSeq[SVFactorie.Window], model: SVModel, outputDir: Option[String]) {
-    println("*** Starting inference (#sentences=%d)".format(windowsWindows.map(_.size).sum))
-    windowsWindows.foreach {
-      w => cc.factorie.BP.inferChainMax(w.asSeq, model)
+  def findDeletions(windows: Seq[Label], summary : BPSummary): Seq[String] = {
+    if (windows.isEmpty) {
+      List[String]()
+    } else {
+      windows.head.categoryValue.charAt(0) match {
+        case '0' => findDeletions(windows.tail, summary)
+        case '1' => {
+          val startLoc = windows(0).bin.loc
+          val delBins = windows.takeWhile(_.categoryValue.charAt(0) == '1')
+          val endLoc = delBins.last.bin.loc
+          val m2 = delBins.map({
+            label => LabelDomain.categories.zip(summary.marginal(label).proportions.asSeq).filter(_._1.charAt(0) == '1').map(_._2).sum
+          })
+          val maxProportion = m2.max
+          val avgProportion = m2.sum / m2.size
+          List(
+            List(startLoc.split(":")(0), startLoc.split(":")(1).split("-")(0), endLoc.split(":")(1).split("-")(0).toInt - 1, maxProportion, avgProportion).mkString("\t")
+          ) ++ findDeletions(windows.dropWhile(_.categoryValue.charAt(0) == '1'), summary)
+        }
+      }
     }
-    writeOutputWindows(outputDir, windowsWindows)
+  }
+
+  def predict(windows: IndexedSeq[SVFactorie.Window], model: SVModel, outputDir: Option[String]) {
+    println("*** Starting inference (#sentences=%d)".format(windows.map(_.size).sum))
+    val summaries = windows.map {
+      w => cc.factorie.BP.inferChainMax(w.asSeq, model)        
+    }
+    writeOutputWindows(outputDir, windows, summaries)
+
+    windows.map(_.asSeq).zip(summaries).flatMap(p => findDeletions(p._1, p._2)).map(println)
   }
 
 
@@ -159,19 +184,27 @@ object SVFactorie {
     print(windowsWithTruePredictions.map(w => w(0).bin.loc).mkString("\n"))
   }
 
-  def writeOutputWindows(outputDir: Option[String], windows: IndexedSeq[SVFactorie.Window]) {
+  def writeOutputWindows(outputDir: Option[String], windows: IndexedSeq[SVFactorie.Window], summaries: IndexedSeq[BPSummary]) {
     outputDir.foreach(outputDirName =>
-      for (w <- windows) {
+      for ((w,summary) <- windows.zip(summaries)) {
         val pw = new java.io.PrintWriter(new File(outputDirName + w(0).bin.loc + ".bed"))
         try {
           for (label <- w) {
             pw.write(label.bin.loc + "\t" + label.target.categoryValue + "\t" + label.categoryValue + "\n")
           }
+          pw.write("\nBEGIN MARGINALS\n")
+          printTokenMarginals(w.asSeq, summary, pw)
         } finally {
           pw.close()
         }
       }
     )
+  }
+
+  def printTokenMarginals(labels:Seq[Label], summary:BPSummary, pw :PrintWriter): Unit = {
+    //val summary = BP.inferChainSum(tokens.map(_.label), model)
+    for (label <- labels)
+      pw.write(label + " " + LabelDomain.categories.zip(summary.marginal(label).proportions.asSeq).sortBy(_._2).reverse.mkString(" ")+ "\n")
   }
 
   def load(filename:String, featureDescriptors : FeatureDescriptors) : Window = {
