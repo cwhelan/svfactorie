@@ -132,21 +132,28 @@ object SVFactorie {
 //    Trainer.onlineTrain(model.parameters, examples, maxIterations=10, optimizer=optimizer, useParallelTrainer = false)
 
     if (validationFiles.length > 0) {
-      predict(validationWindows, model, validationOutputDir)
+      predict(validationWindows, model, validationOutputDir, Some("validation"))
       evaluatePredictions(validationWindows)
     }
   }
 
-
   def findDeletions(windows: Seq[Label], summary : BPSummary): Seq[String] = {
+    findVariants(windows, summary, 0)
+  }
+
+  def findInsertions(windows: Seq[Label], summary : BPSummary): Seq[String] = {
+    findVariants(windows, summary, 2)
+  }
+
+  def findVariants(windows: Seq[Label], summary : BPSummary, variantColumnInLabel : Int): Seq[String] = {
     if (windows.isEmpty) {
       List[String]()
     } else {
-      windows.head.categoryValue.charAt(0) match {
-        case '0' => findDeletions(windows.tail, summary)
+      windows.head.categoryValue.charAt(variantColumnInLabel) match {
+        case '0' => findVariants(windows.tail, summary, variantColumnInLabel)
         case '1' => {
           val startLoc = windows(0).bin.loc
-          val delBins = windows.takeWhile(_.categoryValue.charAt(0) == '1')
+          val delBins = windows.takeWhile(_.categoryValue.charAt(variantColumnInLabel) == '1')
           val endLoc = delBins.last.bin.loc
           val m2 = delBins.map({
             label => LabelDomain.categories.zip(summary.marginal(label).proportions.asSeq).filter(_._1.charAt(0) == '1').map(_._2).sum
@@ -155,20 +162,28 @@ object SVFactorie {
           val avgProportion = m2.sum / m2.size
           List(
             List(startLoc.split(":")(0), startLoc.split(":")(1).split("-")(0), endLoc.split(":")(1).split("-")(0).toInt - 1, maxProportion, avgProportion).mkString("\t")
-          ) ++ findDeletions(windows.dropWhile(_.categoryValue.charAt(0) == '1'), summary)
+          ) ++ findVariants(windows.dropWhile(_.categoryValue.charAt(variantColumnInLabel) == '1'), summary, variantColumnInLabel)
         }
       }
     }
   }
 
-  def predict(windows: IndexedSeq[SVFactorie.Window], model: SVModel, outputDir: Option[String]) {
+  def predict(windows: IndexedSeq[SVFactorie.Window], model: SVModel, outputDir: Option[String], outputFilePrefix: Option[String]) {
     println("*** Starting inference (#sentences=%d)".format(windows.map(_.size).sum))
     val summaries = windows.map {
       w => cc.factorie.BP.inferChainMax(w.asSeq, model)        
     }
     writeOutputWindows(outputDir, windows, summaries)
 
-    windows.map(_.asSeq).zip(summaries).flatMap(p => findDeletions(p._1, p._2)).map(println)
+    val outFilePrintWriters = (outputFilePrefix match {
+      case Some(_) => Seq(outputFilePrefix.get + "_deletions.bed", outputFilePrefix.get + "_insertions.bed")
+      case None => Seq("deletions.bed", "insertions.bed")
+    }).map(s => new java.io.PrintWriter(new File(outputDir.get + s)))
+
+    windows.map(_.asSeq).zip(summaries).flatMap(p => findDeletions(p._1, p._2)).map(l => outFilePrintWriters(0).write(l + "\n"))
+    windows.map(_.asSeq).zip(summaries).flatMap(p => findInsertions(p._1, p._2)).map(l => outFilePrintWriters(1).write(l + "\n"))
+
+    outFilePrintWriters.foreach(_.close())
   }
 
 
@@ -251,7 +266,7 @@ object SVFactorie {
     window
   }
 
-  def testModel(model: SVModel, descriptors: FeatureDescriptors, testDataDir: String, testOutputDir: Option[String]) : Unit = {
+  def testModel(model: SVModel, descriptors: FeatureDescriptors, testDataDir: String, testOutputDir: Option[String], outputFilePrefix: Option[String]) : Unit = {
     val directory: File = new File(testDataDir)
     val testDataFiles = directory.listFiles.map(testDataDir + _.getName)
 
@@ -269,7 +284,7 @@ object SVFactorie {
     println("loaded up features, model.localTemplate.weightsSet.length: " + model.localTemplate.weights.value.length)
 
     println("bin domain length: " + BinDomain.dimensionDomain.length)
-    predict(testWindows, model, testOutputDir)
+    predict(testWindows, model, testOutputDir, outputFilePrefix)
 
   }
 
@@ -283,6 +298,7 @@ object SVFactorie {
       val validationOutputDir = opt[String]("validationOutputDir")
       val testDataDir = opt[String]("testDataDir")
       val testOutputDir = opt[String]("testOutputDir")
+      val outputFilePrefix = opt[String]("outputFilePrefix")
     }
 
     val featureDescriptorFile = Conf.featureDescriptorFile.get
@@ -305,7 +321,7 @@ object SVFactorie {
     }
 
     Conf.testDataDir.get.foreach(
-      testModel(model, featureDescriptors, _, Conf.testOutputDir.get)
+      testModel(model, featureDescriptors, _, Conf.testOutputDir.get, Conf.outputFilePrefix.get)
     )
 
   }
