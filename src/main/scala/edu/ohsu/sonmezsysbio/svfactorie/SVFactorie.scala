@@ -168,22 +168,15 @@ object SVFactorie {
     }
   }
 
-  def predict(windows: IndexedSeq[SVFactorie.Window], model: SVModel, outputDir: Option[String], outputFilePrefix: Option[String]) {
+  def predict(windows: IndexedSeq[SVFactorie.Window], model: SVModel, outputDir: Option[String], outFilePrintWriters : Seq[PrintWriter]) {
     println("*** Starting inference (#sentences=%d)".format(windows.map(_.size).sum))
     val summaries = windows.map {
       w => cc.factorie.BP.inferChainMax(w.asSeq, model)        
     }
     writeOutputWindows(outputDir, windows, summaries)
 
-    val outFilePrintWriters = (outputFilePrefix match {
-      case Some(_) => Seq(outputFilePrefix.get + "_deletions.bed", outputFilePrefix.get + "_insertions.bed")
-      case None => Seq("deletions.bed", "insertions.bed")
-    }).map(s => new java.io.PrintWriter(new File(outputDir.get + s)))
-
     windows.map(_.asSeq).zip(summaries).flatMap(p => findDeletions(p._1, p._2)).map(l => outFilePrintWriters(0).write(l + "\n"))
     windows.map(_.asSeq).zip(summaries).flatMap(p => findInsertions(p._1, p._2)).map(l => outFilePrintWriters(1).write(l + "\n"))
-
-    outFilePrintWriters.foreach(_.close())
   }
 
 
@@ -273,7 +266,21 @@ object SVFactorie {
     val numTestFiles: Int = testDataFiles.length
     println("Total test files: " + numTestFiles)
 
+    val outFilePrintWriters = (outputFilePrefix match {
+      case Some(_) => Seq(outputFilePrefix.get + "_deletions.bed", outputFilePrefix.get + "_insertions.bed")
+      case None => Seq("deletions.bed", "insertions.bed")
+    }).map(s => new java.io.PrintWriter(new BufferedWriter(new FileWriter(new File(testOutputDir.get + s), true))))
+
     println("Loading test files")
+    testDataFiles.grouped(1000).foreach(l => testFiles(l, descriptors, model, testOutputDir, outFilePrintWriters))
+
+    outFilePrintWriters.foreach(_.close())
+  }
+
+
+  def testFiles(testDataFiles: Array[String], descriptors: FeatureDescriptors, model: SVModel, testOutputDir: Option[String], outFilePrintWriters : Seq[PrintWriter]) {
+    val startTime = compat.Platform.currentTime
+    scala.Console.err.print("processing " + testDataFiles.length + " test files\n")
     val testWindows = testDataFiles.map(load(_, descriptors))
 
     val allBins: Seq[Bin] = testWindows.flatten.map(_.bin)
@@ -284,8 +291,8 @@ object SVFactorie {
     println("loaded up features, model.localTemplate.weightsSet.length: " + model.localTemplate.weights.value.length)
 
     println("bin domain length: " + BinDomain.dimensionDomain.length)
-    predict(testWindows, model, testOutputDir, outputFilePrefix)
-
+    predict(testWindows, model, testOutputDir, outFilePrintWriters)
+    scala.Console.err.print("Processed batch in " + (compat.Platform.currentTime - startTime) + "\n")
   }
 
   def main(args:Array[String]): Unit = {
