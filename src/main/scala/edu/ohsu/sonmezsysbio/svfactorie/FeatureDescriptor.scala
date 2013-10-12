@@ -1,6 +1,6 @@
 package edu.ohsu.sonmezsysbio.svfactorie
 
-import java.io.{File, PrintWriter}
+import java.io.{OutputStreamWriter, File, PrintWriter}
 import cc.factorie.CategoricalDomain
 import scala.io.Source
 import edu.ohsu.sonmezsysbio.svfactorie.SVFactorie.{Bin, BinDomain}
@@ -20,7 +20,7 @@ trait FeatureDescriptor {
     if (feature <= nullBin) {
       List(name + FeatureDescriptor.FeatureNameSeparator+ "-N")
     } else {
-      bins.filter(_ < feature).map(name + FeatureDescriptor.FeatureNameSeparator+ ">" + _)
+      bins.filter(_ <= feature).map(name + FeatureDescriptor.FeatureNameSeparator+ ">" + _)
     }
   }
 
@@ -30,7 +30,7 @@ trait FeatureDescriptor {
     } else if (feature > bins(bins.size - 1)) {
       List(name + FeatureDescriptor.FeatureNameSeparator+ bins.size)
     } else {
-      (0 to bins.size - 2).filter(i => feature > bins(i) && feature <= bins(i + 1)).map(_ + 1).map(name + FeatureDescriptor.FeatureNameSeparator+ _)
+      (0 to bins.size - 2).filter(i => feature >= bins(i) && feature <= bins(i + 1)).map(_ + 1).map(name + FeatureDescriptor.FeatureNameSeparator+ _)
     }
   }
 
@@ -57,14 +57,14 @@ object FeatureDescriptor {
     featureDomain.dimensionDomain.combinations(2).toList.filter(f => f(0) != f(1) && FeatureDescriptor.featureNamesNotEqual(f(0).toString(), f(1).toString()))
       .map(f => f(0) + "*" + f(1))
       .foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_))
-    featureDomain.dimensionDomain.filter(f => ! f.toString().contains("@")).map(_ + "@-1")
-      .foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_))
-    featureDomain.dimensionDomain.filter(f => ! f.toString().contains("@")).map(_ + "@+1")
+    featureDomain.dimensionDomain.filter(f => ! f.toString().contains("@")).map(_ + "@1")
       .foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_))
     featureDomain.dimensionDomain.filter(f => ! f.toString().contains("@")).map(_ + "@<>")
       .foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_))
     featureDomain.freeze()
-    new FeatureDescriptors(featureDescriptors)
+    val fd = new FeatureDescriptors(featureDescriptors)
+    fd.print(new PrintWriter(new OutputStreamWriter(Console.err)))
+    fd
   }
 
   def initRelativeFeatures(allBins: Seq[SVFactorie.Bin]) {
@@ -80,15 +80,15 @@ object FeatureDescriptor {
     // Add features from next and previous tokens
     println("Adding offset features...")
     allBins.foreach(bin => {
-      if (bin.label.hasPrev) bin ++= bin.label.prev.bin.activeCategories.filter(!_.contains('@')).map(_ + "@-1")
-      if (bin.label.hasNext) bin ++= bin.label.next.bin.activeCategories.filter(!_.contains('@')).map(_ + "@+1")
+      if (bin.label.hasPrev) bin ++= bin.label.prev.bin.activeCategories.filter(!_.contains('@')).map(_ + "@1")
+      if (bin.label.hasNext) bin ++= bin.label.next.bin.activeCategories.filter(!_.contains('@')).map(_ + "@1")
     })
     println("bin domain length: " + BinDomain.dimensionDomain.length)
 
     println("Adding neighbor features...")
     allBins.foreach(bin => {
-      bin ++= neighborFeatures(bin, -15)
-      bin ++= neighborFeatures(bin, 15)
+      bin ++= neighborFeatures(bin, -6)
+      bin ++= neighborFeatures(bin, 6)
     })
     println("bin domain length: " + BinDomain.dimensionDomain.length)
   }
