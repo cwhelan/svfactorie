@@ -4,6 +4,8 @@ import sys
 import fileinput
 import re
 
+# currently this needs to get run as: samtools view jcvi_sim_wholegenome_100bp_dip_sort.bam | python  extract_soft_clips.py | cut -f1-2 | uniq -c | awk '{OFS="\t"; print $2,$3,$3+24,$1}'
+
 def print_scpos(chrom, scpos):
     bin = scpos - scpos % 25
     print "\t".join([chrom, str(bin), "1"])
