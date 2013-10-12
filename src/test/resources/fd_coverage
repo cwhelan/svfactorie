@@ -1,0 +1,13 @@
+#label|feature	type	column	name	nullBin	bins
+feature	binnedReal	1	mu1	260.0,300.0,340.0
+feature	cumulativeBinnedReal	2	lr	0.001	.3,.5,.75,1,2,5,10,100,1000
+feature binnedReal	0	w0	.15,.35,.5,1
+feature	cumulativeBinnedReal	5	ccov	0	3,5,10,20,40,100,200
+feature	cumulativeBinnedReal	6	singletons	-1	1,3,5,10
+feature	cumulativeBinnedReal	7	changePoint	0	5,10,20,30,50,100
+feature	cumulativeBinnedReal	8	softClip	-1	1,3,4,5,9
+feature	binnedReal	9	rdepth	10,20,30,40,50
+feature	cumulativeBinnedReal	10	covChangePoint	1	5,10,15,20,25,30,40
+feature	boolean	11	simpleRepeat
+feature	boolean	12	repeat
+feature	boolean	13	segdup
