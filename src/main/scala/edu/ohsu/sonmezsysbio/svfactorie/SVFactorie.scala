@@ -131,13 +131,12 @@ object SVFactorie {
 
 //    Trainer.onlineTrain(model.parameters, examples, maxIterations=10, optimizer=optimizer, useParallelTrainer = false)
 
-    val outFilePrintWriters =  Seq("validation_set_deletions.bed", "validation_set_insertions.bed").map(s => new java.io.PrintWriter(new BufferedWriter(new FileWriter(new File(validationOutputDir.get + s), true))))
-
     if (validationFiles.length > 0) {
+      val outFilePrintWriters =  Seq("validation_set_deletions.bed", "validation_set_insertions.bed").map(s => new java.io.PrintWriter(new BufferedWriter(new FileWriter(new File(validationOutputDir.get + s), true))))
       predict(validationWindows, model, validationOutputDir, outFilePrintWriters)
       evaluatePredictions(validationWindows)
+      outFilePrintWriters.foreach(_.close())
     }
-    outFilePrintWriters.foreach(_.close())
   }
 
   def findDeletions(windows: Seq[Label], summary : BPSummary): Seq[String] = {
