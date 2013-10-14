@@ -129,7 +129,7 @@ object SVFactorie {
         val optimizer = new optimize.AdaGradRDA(rate=lr, l1=l1Factor/examples.length, l2=l2Factor/examples.length)
 
 
-    Trainer.onlineTrain(model.parameters, examples, maxIterations=10, optimizer=optimizer, useParallelTrainer = false)
+    Trainer.onlineTrain(model.parameters, examples, maxIterations=50, optimizer=optimizer, useParallelTrainer = false)
 
     if (validationFiles.length > 0) {
       val outFilePrintWriters =  Seq("validation_set_deletions.bed", "validation_set_insertions.bed").map(s => new java.io.PrintWriter(new BufferedWriter(new FileWriter(new File(validationOutputDir.get + s), true))))
