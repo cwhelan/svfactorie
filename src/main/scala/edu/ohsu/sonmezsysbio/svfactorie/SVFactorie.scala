@@ -187,7 +187,7 @@ object SVFactorie {
     writeOutputWindows(outputDir, windows, summaries)
 
     windows.map(_.asSeq).zip(summaries).flatMap(p => findDeletions(p._1, new MarginalProportionHolder(Some(p._2)))).map(l => outFilePrintWriters(0).write(l + "\n"))
-    windows.map(_.asSeq).zip(summaries).flatMap(p => findInsertions(p._1, new MarginalProportionHolder(Some(p._2)))).map(l => outFilePrintWriters(1).write(l + "\n"))
+    // windows.map(_.asSeq).zip(summaries).flatMap(p => findInsertions(p._1, new MarginalProportionHolder(Some(p._2)))).map(l => outFilePrintWriters(1).write(l + "\n"))
   }
 
 
@@ -253,11 +253,13 @@ object SVFactorie {
       // last tested accuracy - 80%
 
       // use del/ins/flank (no zygosity) 72% -- up to 78% with interaction
-      val labelStr = delPres + delFlank + insPres + insFlank
+      // val labelStr = delPres + delFlank + insPres + insFlank
 
       // use just del/ins (no zygosity) accuracy 88% - 85%
       // val labelStr = delPres + insPres
 
+      // use just deletion/del flank
+      val labelStr = delPres + delFlank
       val label = new Label(labelStr, loc)
 
       val featureValues = fields.slice(3, fields.length - numLabelFields)
