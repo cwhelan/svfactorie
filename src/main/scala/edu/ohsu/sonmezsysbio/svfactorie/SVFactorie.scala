@@ -107,12 +107,12 @@ object SVFactorie {
     // begin batch training code
     val examples = trainingWindows.map(new optimize.LikelihoodExample(_, model, InferByBPChainSum))
 
-    // LBGFS
-//    val optimizer = new optimize.LBFGS with optimize.L2Regularization
-//    optimizer.variance = 10000.0
-////
-////
-//    Trainer.batchTrain(model.parameters, examples, optimizer = optimizer)
+//    LBGFS
+    val optimizer = new optimize.LBFGS with optimize.L2Regularization
+    optimizer.variance = 10000.0
+
+
+    Trainer.batchTrain(model.parameters, examples, optimizer = optimizer)
 
     // begin online trainer code
 //    val sampler = new GibbsSampler(model, HammingObjective)
@@ -123,13 +123,13 @@ object SVFactorie {
 //    Trainer.onlineTrain(model.parameters, sampleRankExamples)
 
     // AdaGrad
-        val lr=1.0
-        val l1Factor = 0.02
-        val l2Factor = 0.000001
-        val optimizer = new optimize.AdaGradRDA(rate=lr, l1=l1Factor/examples.length, l2=l2Factor/examples.length)
-
-
-    Trainer.onlineTrain(model.parameters, examples, maxIterations=25, optimizer=optimizer, useParallelTrainer = false)
+//        val lr=1.0
+//        val l1Factor = 0.02
+//        val l2Factor = 0.000001
+//        val optimizer = new optimize.AdaGradRDA(rate=lr, l1=l1Factor/examples.length, l2=l2Factor/examples.length)
+//
+//
+//    Trainer.onlineTrain(model.parameters, examples, maxIterations=25, optimizer=optimizer, useParallelTrainer = false)
 
     if (validationFiles.length > 0) {
       val outFilePrintWriters =  Seq("validation_set_deletions.bed", "validation_set_insertions.bed").map(s => new java.io.PrintWriter(new BufferedWriter(new FileWriter(new File(validationOutputDir.get + s), true))))
