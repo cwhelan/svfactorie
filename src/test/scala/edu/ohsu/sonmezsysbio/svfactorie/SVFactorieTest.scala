@@ -1,8 +1,7 @@
 package edu.ohsu.sonmezsysbio.svfactorie
 
 import org.scalatest.FunSuite
-import edu.ohsu.sonmezsysbio.svfactorie.SVFactorie.BinDomain
-import java.io.File
+import SVFactorie._
 
 /**
  * Created by IntelliJ IDEA.
@@ -25,5 +24,14 @@ class SVFactorieTest extends FunSuite {
     BinDomain.clear()
     val featureDescriptors = FeatureDescriptor.loadFeatureDescriptors(dir + "fd_coverage", BinDomain)
     SVFactorie.trainAndValidateModel(dir + "windows/", Some(0.5), featureDescriptors, new SVModel(featureDescriptors), Some(dir + "validation"))
+  }
+
+  test("find deletion variant") {
+
+    val labels = List(
+      new Label("0000", "1:100-124"), new Label("0100", "1:125-149"), new Label("1100", "1:150-174"), new Label("1000", "1:175-199"),
+      new Label("1000", "1:200-224"), new Label("1100", "1:225-249"), new Label("0100", "1:250-274"), new Label("0000", "1:275-299")
+    )
+    assert("1\t150\t249\t4.0\t4.0" === SVFactorie.findDeletions(labels, new MarginalProportionHolder(None))(0))
   }
 }
