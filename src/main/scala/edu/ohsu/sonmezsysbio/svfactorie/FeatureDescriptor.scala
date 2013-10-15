@@ -54,12 +54,12 @@ object FeatureDescriptor {
       }
     ).toArray
     featureDescriptors.foreach(f => f.possibleFeatures().foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_)))
-    featureDomain.dimensionDomain.combinations(2).toList.filter(f => f(0) != f(1) && FeatureDescriptor.featureNamesNotEqual(f(0).toString(), f(1).toString()))
-      .map(f => f(0) + "*" + f(1))
-      .foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_))
     featureDomain.dimensionDomain.filter(f => ! f.toString().contains("@")).map(_ + "@1")
       .foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_))
     featureDomain.dimensionDomain.filter(f => ! f.toString().contains("@")).map(_ + "@<>")
+      .foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_))
+    featureDomain.dimensionDomain.combinations(2).toList.filter(f => f(0) != f(1) && FeatureDescriptor.featureNamesNotEqual(f(0).toString(), f(1).toString()))
+      .map(f => f(0) + "*" + f(1))
       .foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_))
     featureDomain.freeze()
     val fd = new FeatureDescriptors(featureDescriptors)
@@ -69,14 +69,6 @@ object FeatureDescriptor {
 
   def initRelativeFeatures(allBins: Seq[SVFactorie.Bin]) {
     // Add interaction features
-    println("Adding interaction features...")
-    allBins.foreach(bin => {
-      val l = bin.activeCategories
-      bin ++= l.map(_ => l).flatten.combinations(2).toList.filter(f => f(0) != f(1) &&
-        FeatureDescriptor.featureNamesNotEqual(f(0), f(1))).map(f => f(0) + "*" + f(1))
-    })
-    println("bin domain length: " + BinDomain.dimensionDomain.length)
-
     // Add features from next and previous tokens
     println("Adding offset features...")
     allBins.foreach(bin => {
@@ -91,6 +83,15 @@ object FeatureDescriptor {
       bin ++= neighborFeatures(bin, 6)
     })
     println("bin domain length: " + BinDomain.dimensionDomain.length)
+
+    println("Adding interaction features...")
+    allBins.foreach(bin => {
+      val l = bin.activeCategories
+      bin ++= l.map(_ => l).flatten.combinations(2).toList.filter(f => f(0) != f(1) &&
+        FeatureDescriptor.featureNamesNotEqual(f(0), f(1))).map(f => f(0) + "*" + f(1))
+    })
+    println("bin domain length: " + BinDomain.dimensionDomain.length)
+
   }
 
   def neighborFeatures(bin : Bin, index : Int, current : Int = 0) : Set[String] = {
