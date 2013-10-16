@@ -27,11 +27,22 @@ class SVFactorieTest extends FunSuite {
   }
 
   test("find deletion variant") {
-
+    LabelDomain.clear()
     val labels = List(
       new Label("0000", "1:100-124"), new Label("0100", "1:125-149"), new Label("1100", "1:150-174"), new Label("1000", "1:175-199"),
       new Label("1000", "1:200-224"), new Label("1100", "1:225-249"), new Label("0100", "1:250-274"), new Label("0000", "1:275-299")
     )
-    assert("1\t150\t249\t4.0\t4.0" === SVFactorie.findDeletions(labels, new MarginalProportionHolder(None))(0))
+    assert("1\t150\t249\t0.5\t0.5" === SVFactorie.findVariants(labels, new MarginalProportionHolder(None), SVFactorie.deletionDetector)(0))
   }
+
+  test("find insertion variant") {
+    LabelDomain.clear()
+    val labels = List(
+      new Label("0000", "1:75-199"), new Label("0001", "1:100-124"), new Label("0001", "1:125-149"), new Label("0011", "1:150-174"),
+      new Label("0001", "1:175-199"), new Label("0000", "1:200-224")
+    )
+    assert("1\t150\t174\t0.3333333333333333\t0.3333333333333333" === SVFactorie.findVariants(labels, new MarginalProportionHolder(None), SVFactorie.insertionDetector)(0))
+  }
+
+
 }

@@ -142,38 +142,41 @@ object SVFactorie {
   class MarginalProportionHolder(summary : Option[BPSummary]) {
     def getProportion(label : Label) : Seq[Double] = {
       summary match {
-        case None => Array.fill[Double](label.domain.length)(1.0).toSeq
+        case None => Array.fill[Double](label.domain.length)(1.0 / label.domain.length).toSeq
         case Some(_) => summary.get.marginal(label).proportions.asSeq
       }
     }
   }
 
-  def findDeletions(windows: Seq[Label], summary : MarginalProportionHolder): Seq[String] = {
-    findVariants(windows, summary, 0)
+  def deletionDetector(l : String) = { l.charAt(0) == '1' }
+  def insertionDetector(l : String) = { l.charAt(2) == '1' }
+
+  def findDeletionsSimple(windows: Seq[Label], summary : MarginalProportionHolder): Seq[String] = {
+    findVariants(windows, summary, deletionDetector)
   }
 
-  def findInsertions(windows: Seq[Label], summary : MarginalProportionHolder): Seq[String] = {
-    findVariants(windows, summary, 2)
+  def findInsertionsSimple(windows: Seq[Label], summary : MarginalProportionHolder): Seq[String] = {
+    findVariants(windows, summary, insertionDetector)
   }
 
-  def findVariants(window: Seq[Label], summary : MarginalProportionHolder, variantColumnInLabel : Int): Seq[String] = {
+  def findVariants(window: Seq[Label], summary : MarginalProportionHolder, variantDetector : String => Boolean): Seq[String] = {
     if (window.isEmpty) {
       List[String]()
     } else {
-      window.head.categoryValue.charAt(variantColumnInLabel) match {
-        case '0' => findVariants(window.tail, summary, variantColumnInLabel)
-        case '1' => {
+      variantDetector(window.head.categoryValue) match {
+        case false => findVariants(window.tail, summary, variantDetector)
+        case true => {
           val startLoc = window(0).bin.loc
-          val delBins = window.takeWhile(_.categoryValue.charAt(variantColumnInLabel) == '1')
-          val endLoc = delBins.last.bin.loc
-          val m2 = delBins.map({
-            label => LabelDomain.categories.zip(summary.getProportion(label)).filter(_._1.charAt(0) == '1').map(_._2).sum
+          val variantBins = window.takeWhile(l => variantDetector(l.categoryValue))
+          val endLoc = variantBins.last.bin.loc
+          val m2 = variantBins.map({
+            label => LabelDomain.categories.zip(summary.getProportion(label)).filter(l => variantDetector(l._1)).map(_._2).sum
           })
           val maxProportion = m2.max
           val avgProportion = m2.sum / m2.size
           List(
             List(startLoc.split(":")(0), startLoc.split(":")(1).split("-")(0), endLoc.split(":")(1).split("-")(1), maxProportion, avgProportion).mkString("\t")
-          ) ++ findVariants(window.dropWhile(_.categoryValue.charAt(variantColumnInLabel) == '1'), summary, variantColumnInLabel)
+          ) ++ findVariants(window.dropWhile(l => variantDetector(l.categoryValue)), summary, variantDetector)
         }
       }
     }
@@ -186,7 +189,7 @@ object SVFactorie {
     }
     writeOutputWindows(outputDir, windows, summaries)
 
-    windows.map(_.asSeq).zip(summaries).flatMap(p => findDeletions(p._1, new MarginalProportionHolder(Some(p._2)))).map(l => outFilePrintWriters(0).write(l + "\n"))
+    windows.map(_.asSeq).zip(summaries).flatMap(p => findDeletionsSimple(p._1, new MarginalProportionHolder(Some(p._2)))).map(l => outFilePrintWriters(0).write(l + "\n"))
     // windows.map(_.asSeq).zip(summaries).flatMap(p => findInsertions(p._1, new MarginalProportionHolder(Some(p._2)))).map(l => outFilePrintWriters(1).write(l + "\n"))
   }
 
