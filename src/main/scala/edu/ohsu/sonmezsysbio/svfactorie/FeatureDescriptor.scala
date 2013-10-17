@@ -51,6 +51,7 @@ object FeatureDescriptor {
         case "boolean" => new BooleanFeatureDescriptor(f(2).toInt, f(3))
         case "cumulativeBinnedReal" => new CumulativeBinnedRealFeatureDescriptor(f(2).toInt, f(3), f(4).toDouble, f(5).split(",").map(_.toDouble))
         case "binnedReal" => new BinnedRealFeatureDescriptor(f(2).toInt, f(3), f(4).split(",").map(_.toDouble))
+        case _ => throw new Exception("bad feature type: " + f)
       }
     ).toArray
     featureDescriptors.foreach(f => f.possibleFeatures().foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_)))
@@ -58,8 +59,9 @@ object FeatureDescriptor {
       .foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_))
     featureDomain.dimensionDomain.filter(f => ! f.toString().contains("@")).map(_ + "@<>")
       .foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_))
-    featureDomain.dimensionDomain.combinations(2).toList.filter(f => f(0) != f(1) && FeatureDescriptor.featureNamesNotEqual(f(0).toString(), f(1).toString()))
-      .map(f => f(0) + "*" + f(1))
+    featureDomain.dimensionDomain.combinations(2).toList.filter(f => f(0) != f(1)
+    //  && FeatureDescriptor.featureNamesNotEqual(f(0).toString(), f(1).toString())
+    ).map(f => f(0) + "*" + f(1))
       .foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_))
     featureDomain.freeze()
     val fd = new FeatureDescriptors(featureDescriptors)
@@ -87,8 +89,9 @@ object FeatureDescriptor {
     println("Adding interaction features...")
     allBins.foreach(bin => {
       val l = bin.activeCategories
-      bin ++= l.map(_ => l).flatten.combinations(2).toList.filter(f => f(0) != f(1) &&
-        FeatureDescriptor.featureNamesNotEqual(f(0), f(1))).map(f => f(0) + "*" + f(1))
+      bin ++= l.map(_ => l).flatten.combinations(2).toList.filter(f => f(0) != f(1)
+      //  && FeatureDescriptor.featureNamesNotEqual(f(0), f(1))
+      ).map(f => f(0) + "*" + f(1))
     })
     println("bin domain length: " + BinDomain.dimensionDomain.length)
 
