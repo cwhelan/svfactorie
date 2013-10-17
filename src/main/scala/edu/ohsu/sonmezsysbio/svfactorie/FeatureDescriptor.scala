@@ -55,9 +55,11 @@ object FeatureDescriptor {
       }
     ).toArray
     featureDescriptors.foreach(f => f.possibleFeatures().foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_)))
-    featureDomain.dimensionDomain.filter(f => ! f.toString().contains("@")).map(_ + "@1")
+    featureDomain.dimensionDomain.filter(f => ! f.toString().contains("@")).map(_ + "@1<>")
       .foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_))
-    featureDomain.dimensionDomain.filter(f => ! f.toString().contains("@")).map(_ + "@<>")
+    featureDomain.dimensionDomain.filter(f => ! f.toString().contains("@")).map(_ + "@6<>")
+      .foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_))
+    featureDomain.dimensionDomain.filter(f => ! f.toString().contains("@")).map(_ + "@15<>")
       .foreach(featureDomain.dimensionDomain += featureDomain.stringToCategory(_))
     featureDomain.dimensionDomain.combinations(2).toList.filter(f => f(0) != f(1)
     //  && FeatureDescriptor.featureNamesNotEqual(f(0).toString(), f(1).toString())
@@ -74,15 +76,22 @@ object FeatureDescriptor {
     // Add features from next and previous tokens
     println("Adding offset features...")
     allBins.foreach(bin => {
-      if (bin.label.hasPrev) bin ++= bin.label.prev.bin.activeCategories.filter(!_.contains('@')).map(_ + "@1")
-      if (bin.label.hasNext) bin ++= bin.label.next.bin.activeCategories.filter(!_.contains('@')).map(_ + "@1")
+      if (bin.label.hasPrev) bin ++= bin.label.prev.bin.activeCategories.filter(!_.contains('@')).map(_ + "@1<>")
+      if (bin.label.hasNext) bin ++= bin.label.next.bin.activeCategories.filter(!_.contains('@')).map(_ + "@1<>")
     })
     println("bin domain length: " + BinDomain.dimensionDomain.length)
 
-    println("Adding neighbor features...")
+    println("Adding neighbor features (6)...")
     allBins.foreach(bin => {
-      bin ++= neighborFeatures(bin, -6)
-      bin ++= neighborFeatures(bin, 6)
+      bin ++= neighborFeatures(bin, -6, identifier="@6<>")
+      bin ++= neighborFeatures(bin, 6, identifier="@6<>")
+    })
+    println("bin domain length: " + BinDomain.dimensionDomain.length)
+
+    println("Adding neighbor features (15)...")
+    allBins.foreach(bin => {
+      bin ++= neighborFeatures(bin, -15, identifier="@15<>")
+      bin ++= neighborFeatures(bin, 15, identifier="@15<>")
     })
     println("bin domain length: " + BinDomain.dimensionDomain.length)
 
@@ -97,7 +106,7 @@ object FeatureDescriptor {
 
   }
 
-  def neighborFeatures(bin : Bin, index : Int, current : Int = 0) : Set[String] = {
+  def neighborFeatures(bin : Bin, index : Int, current : Int = 0, identifier: String) : Set[String] = {
     if (Math.abs(current - index) <= 1) {
       Set.empty
     } else {
@@ -105,8 +114,8 @@ object FeatureDescriptor {
       if (left && ! bin.label.hasPrev) return Set.empty
       if (! left && ! bin.label.hasNext) return Set.empty
       val neighbor = if (left) bin.label.prev.bin else bin.label.next.bin
-      neighbor.activeCategories.filter(!_.contains('@')).map(_+"@<>").toSet.union(
-        neighborFeatures(neighbor, index, current + (if(left) -1 else 1)))
+      neighbor.activeCategories.filter(!_.contains('@')).map(_+identifier).toSet.union(
+        neighborFeatures(neighbor, index, current + (if(left) -1 else 1), identifier=identifier))
     }
 
   }
