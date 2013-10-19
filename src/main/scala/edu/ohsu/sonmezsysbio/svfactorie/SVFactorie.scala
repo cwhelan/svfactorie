@@ -259,10 +259,10 @@ object SVFactorie {
       // val labelStr = delPres + delFlank + insPres + insFlank
 
       // use just del/ins (no zygosity) accuracy 88% - 85%
-      // val labelStr = delPres + insPres
+      val labelStr = delPres + insPres
 
       // use just deletion/del flank
-      val labelStr = delPres + delFlank
+      //val labelStr = delPres + delFlank
       val label = new Label(labelStr, loc)
 
       val featureValues = fields.slice(3, fields.length - numLabelFields)
